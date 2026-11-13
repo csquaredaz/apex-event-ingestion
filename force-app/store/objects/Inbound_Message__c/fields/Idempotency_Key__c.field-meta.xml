@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Idempotency_Key__c</fullName>
+    <description
+  >Source__c + ':' + External_Message_Id__c. Unique and case-sensitive, so the database rejects a second copy of a message (ADR 0003).</description>
+    <label>Idempotency Key</label>
+    <caseSensitive>true</caseSensitive>
+    <externalId>true</externalId>
+    <length>255</length>
+    <required>true</required>
+    <unique>true</unique>
+    <type>Text</type>
+</CustomField>

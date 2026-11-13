@@ -43,7 +43,7 @@ Last updated: 2026-11-13
 
 ## Probes for the dev org, before spending CI orgs
 
-1. `allOrNone=false` insert returns `DUPLICATE_VALUE` per row, for a stored key and for a key repeated in the same list.
+1. **Proven 2026-11-13 in `aei-dev`:** an `allOrNone=false` insert (system or user mode) gives `DUPLICATE_VALUE` only to the repeated row. The first copy in a list succeeds and the rest of the batch is unaffected, so the in-memory dedupe is optional. A stored key also gives `DUPLICATE_VALUE`; the key is case-sensitive; `getFields()` is empty, so classify on the status code. Defaults: `Received`, attempts 0.
 2. User-mode DML from the Platform Event trigger fails for the Automated Process user without `Event_Ingestion_Processor` and passes with it.
 3. Finalizer: its fields keep the claimed Ids after a `LimitException`; it can do DML after the job rolls back; it can enqueue one job; the `AsyncOptions` delay and stack depth; how it behaves at `stopTest`.
 4. Whether a test can trigger a `LimitException` deterministically, or whether tests use a fake `FinalizerContext` only.
@@ -54,10 +54,11 @@ Last updated: 2026-11-13
 
 ## Open decisions
 
-| Decision                                        | Options                                                                           | Leaning                                          | Needed by |
-| ----------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ | --------- |
-| How a claimed file is shared with the processor | `ContentDocumentLink` to the message record, a library, or the producer shares it | Decide after probe 7                             | PR 6      |
-| Inline payload cut-over size                    | The 131,072-character field limit, or a lower threshold                           | The field limit: anything larger must be claimed | PR 6      |
+| Decision                                         | Options                                                                                                                             | Leaning                                                 | Needed by |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | --------- |
+| How a claimed file is shared with the processor  | `ContentDocumentLink` to the message record, a library, or the producer shares it                                                   | Decide after probe 7                                    | PR 6      |
+| Inline payload cut-over size                     | The 131,072-character field limit, or a lower threshold                                                                             | The field limit: anything larger must be claimed        | PR 6      |
+| Stall sweeper access to messages it does not own | Modify All (needs Delete too), run the sweeper as the Automated Process user, or a documented `without sharing` selector and update | Decide in PR 7; PR 2 ships Processor without Modify All | PR 7      |
 
 ## Notes for the next session
 
