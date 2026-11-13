@@ -1,0 +1,25 @@
+{
+  "packageDirectories": [
+    {
+      "path": "force-app",
+      "default": true,
+      "package": "apex-event-ingestion",
+      "versionName": "ver 1.0",
+      "versionNumber": "1.0.0.NEXT",
+      "versionDescription": "Idempotent inbound event ingestion: a message store, Command and Composite dispatch, Finalizer recovery and stall detection on apex-core-lib.",
+      "definitionFile": "config/project-scratch-def.json",
+      "dependencies": [
+        {
+          "package": "apex-core-lib@1.1.0-1"
+        }
+      ]
+    }
+  ],
+  "name": "apex-event-ingestion",
+  "namespace": "",
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "68.0",
+  "packageAliases": {
+    "apex-core-lib@1.1.0-1": "04tak000000u3MbAAI"
+  }
+}
