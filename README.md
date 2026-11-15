@@ -57,13 +57,30 @@ for (AppendResult result : results) {
 }
 ```
 
+Handle a message type with a bulk Command, then route it with a `Message_Route__mdt` row (`Message_Type__c = order.status_changed`, `Handler_Class__c = OrderStatusChangedHandler`):
+
+```apex
+public with sharing class OrderStatusChangedHandler implements IMessageHandler {
+  public List<HandlerResult> handle(List<InboundMessage> messages) {
+    List<HandlerResult> results = new List<HandlerResult>();
+    for (InboundMessage message : messages) {
+      // Parse, then apply in bulk after the loop. Idempotent, order-free, no synchronous callouts.
+      results.add(HandlerResult.success(message.getMessageId()));
+    }
+    return results;
+  }
+}
+```
+
 ## Design decisions
 
-| Decision      | Choice                                                                                                                                              | Rejected alternative                               | ADR                                                        |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
-| Distribution  | Own unlocked package on apex-core-lib 1.1.0-1                                                                                                       | Source-only repo; a module inside apex-core-lib    | [0001](docs/adr/0001-apex-event-ingestion-distribution.md) |
-| Message store | Custom object `Inbound_Message__c` with a status lifecycle, OWD Private, Processor and Viewer permission sets                                       | Big Object; no store, relying on event replay      | [0002](docs/adr/0002-message-store.md)                     |
-| Idempotency   | Producer key `Source:ExternalId` in a unique, case-sensitive field; partial-success insert in user mode, duplicates classified by `DUPLICATE_VALUE` | Payload hash; query-then-insert; upsert on the key | [0003](docs/adr/0003-producer-idempotency-key.md)          |
+| Decision      | Choice                                                                                                                                                                                          | Rejected alternative                                        | ADR                                                        |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
+| Distribution  | Own unlocked package on apex-core-lib 1.1.0-1                                                                                                                                                   | Source-only repo; a module inside apex-core-lib             | [0001](docs/adr/0001-apex-event-ingestion-distribution.md) |
+| Message store | Custom object `Inbound_Message__c` with a status lifecycle, OWD Private, Processor and Viewer permission sets                                                                                   | Big Object; no store, relying on event replay               | [0002](docs/adr/0002-message-store.md)                     |
+| Idempotency   | Producer key `Source:ExternalId` in a unique, case-sensitive field; partial-success insert in user mode, duplicates classified by `DUPLICATE_VALUE`                                             | Payload hash; query-then-insert; upsert on the key          | [0003](docs/adr/0003-producer-idempotency-key.md)          |
+| Dispatch      | Bulk Command `IMessageHandler` routed by `Message_Route__mdt`; several routes form a Composite where the worst result wins; each handler is guarded by a savepoint (so no synchronous callouts) | One call per message; Chain of Responsibility; no savepoint | [0004](docs/adr/0004-command-composite-dispatch.md)        |
+| Ordering      | No ordering guarantee; handlers skip stale updates with `InboundMessage.isOlderThan`                                                                                                            | Per-record sequencing; a single ordered job                 | [0005](docs/adr/0005-no-ordering-guarantee.md)             |
 
 ## Testing
 
