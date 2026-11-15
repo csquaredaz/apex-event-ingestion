@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-13
+Last updated: 2026-11-15
 
 ## Done
 
@@ -8,6 +8,16 @@ Last updated: 2026-11-13
 - Depends on `apex-core-lib@1.1.0-1` (`04tak000000u3MbAAI`). First feature folder: `force-app/store/`.
 - ADR 0001: an unlocked package with no namespace on top of A.
 - Design approved 2026-11-13 (below).
+- **PR 1 `chore/scaffold`** merged as `759e0fc`.
+- **PR 2 `feat/message-store` merged 2026-11-15 as `6d2f0ef` (PR #2).**
+  - The ready run, 43741769336, used one CI org: 30 tests from C's 4 classes only, and 100% coverage of C's 133 lines.
+  - The `main` run, 43742271168, reused that result (scratch-org job skipped) and published the badge at 100%.
+- **PR 2 API, approved 2026-11-15:**
+  - `IMessageStore.append(List<Inbound_Message__c>)` returns one `AppendResult` per message (`ACCEPTED`, `DUPLICATE` with the stored Id, or `REJECTED` with the error).
+  - DML goes through `IPartialDml` / `UserModePartialDml`, because A's Unit of Work is all-or-none.
+  - There is no in-memory dedupe.
+  - `MessageStoreException` is thrown when the user can't create the object or its optional producer fields. The review caught the field gap.
+  - ADRs 0002 and 0003 are written.
 
 ## Approved design
 
@@ -38,7 +48,7 @@ Last updated: 2026-11-13
 ## What C's first PRs prove for E's template
 
 - **PR 1:** no test classes, so no `apex-test-results` artifact. The `main` run's `reuse` job should report `reuse=true` with empty coverage and spend no second org.
-- **PR 2:** the run lists only C's `*Test` classes (`--class-names`, none of A's), and `package-coverage.txt` lists only C's classes.
+- **PR 2: proven 2026-11-15.** The run listed only C's 4 `*Test` classes (none of A's). The gate filtered the coverage JSON, which also has rows for A's classes, down to C's 7 classes. `package-coverage.txt` is that one number (100); with A's rows counted it would have been 59%.
 - **Tag `v1.0.0`:** `changelog-section.sh` finds `## 1.0.0`, and both release jobs add it to the notes. The failure path is checked locally (`bash scripts/changelog-section.sh 9.9.9` exits non-zero), not with a throwaway tag.
 
 ## Probes for the dev org, before spending CI orgs
@@ -62,5 +72,9 @@ Last updated: 2026-11-13
 
 ## Notes for the next session
 
-- Dev Hub on 2026-11-13: 6/6 daily scratch orgs, 6/6 package creates. `acl-dev` and `apl-dev` held two of the three active slots; the owner is deleting both so a dev org (`aei-dev`, 30 days) and a CI org fit.
+- **Next: PR 3 `feat/dispatch`.** This branch was cut from `main` at `6d2f0ef`, and its first commit is this handoff. Run probe 5 (`Type.forName` reaching an unpackaged `example/` handler) in `aei-dev` before writing `MessageRouter`. Show the `IMessageHandler`, `InboundMessage` and `HandlerResult` signatures before writing tests, because they are public API.
+- Dispatch reads `Payload__c`, which `InboundMessagesSelector`'s standard field list leaves out on purpose. Add a dedicated query method for it.
+- Dev Hub on 2026-11-15, after PR 2: 1 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs, 6/6 package creates.
+- `aei-dev` (expires around 2026-12-13) is in sync with `main`: the store, its permission sets, the bindings and the tests are deployed, and Processor is assigned to the default user.
+- To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
