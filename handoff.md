@@ -74,7 +74,7 @@ Last updated: 2026-11-15
 
 - **Next: PR 3 `feat/dispatch`.** This branch was cut from `main` at `6d2f0ef`, and its first commit is this handoff. Run probe 5 (`Type.forName` reaching an unpackaged `example/` handler) in `aei-dev` before writing `MessageRouter`. Show the `IMessageHandler`, `InboundMessage` and `HandlerResult` signatures before writing tests, because they are public API.
 - Dispatch reads `Payload__c`, which `InboundMessagesSelector`'s standard field list leaves out on purpose. Add a dedicated query method for it.
-- Dev Hub on 2026-11-15, after PR 2: 1 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs, 6/6 package creates.
+- Dev Hub on 2026-11-15, after PR 2: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs, 6/6 package creates.
 - `aei-dev` (expires around 2026-12-13) is in sync with `main`: the store, its permission sets, the bindings and the tests are deployed, and Processor is assigned to the default user.
 - To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
