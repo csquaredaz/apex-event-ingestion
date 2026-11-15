@@ -59,4 +59,32 @@ private class InboundMessagesSelectorTest {
     Assert.areEqual(0, selector.selectByIdempotencyKeys(new Set<String>()).size(), 'Empty keys');
     Assert.areEqual(0, Limits.getQueries(), 'No SOQL spent');
   }
+
+  @IsTest
+  static void selectWithPayloadByIds_storedRows_includesThePayloadForThatQueryOnly() {
+    User processor = EventIngestionTestFactory.minimumAccessUser(EventIngestionTestFactory.PROCESSOR);
+    System.runAs(processor) {
+      List<Inbound_Message__c> rows = new List<Inbound_Message__c>{ row('ORD-1'), row('ORD-2') };
+      insert as user rows;
+      InboundMessagesSelector selector = new InboundMessagesSelector();
+
+      Test.startTest();
+      List<Inbound_Message__c> found = selector.selectWithPayloadByIds(new Set<Id>{ rows[0].Id });
+      Test.stopTest();
+
+      Assert.areEqual(1, found.size(), 'Only the requested Id');
+      Assert.areEqual(rows[0].Payload__c, found[0].Payload__c, 'The payload is selected');
+      Assert.areEqual(MessageStatuses.RECEIVED, found[0].Status__c, 'Standard fields too');
+      Assert.isFalse(selector.buildSoql('Id IN :ids').contains('Payload__c'), 'Later queries leave it out again');
+    }
+  }
+
+  @IsTest
+  static void selectWithPayloadByIds_nullOrEmpty_returnsNothingWithoutQuerying() {
+    InboundMessagesSelector selector = new InboundMessagesSelector();
+
+    Assert.areEqual(0, selector.selectWithPayloadByIds(null).size(), 'Null Ids');
+    Assert.areEqual(0, selector.selectWithPayloadByIds(new Set<Id>()).size(), 'Empty Ids');
+    Assert.areEqual(0, Limits.getQueries(), 'No SOQL spent');
+  }
 }

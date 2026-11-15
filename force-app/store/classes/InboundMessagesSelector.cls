@@ -2,10 +2,15 @@
  * @description Selects `Inbound_Message__c` in user mode (apex-core-lib's `SObjectSelector`).
  * `inherited sharing`, because the store and later the processor job call it in their own
  * sharing context; the queries are user mode either way. The standard field list leaves out
- * `Payload__c`, which can be 131,072 characters: dispatch adds its own query for it.
+ * `Payload__c`, which can be 131,072 characters; only `selectWithPayloadByIds`, used by dispatch,
+ * adds it.
  * @group Public API
  */
 public inherited sharing class InboundMessagesSelector extends SObjectSelector implements IInboundMessagesSelector {
+  // True only for the duration of selectWithPayloadByIds, so the base class's query builder
+  // includes the payload; every other query leaves it out.
+  private Boolean includePayload = false;
+
   /**
    * @description The type this selector queries.
    * @return `Inbound_Message__c.SObjectType`.
@@ -16,10 +21,10 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
 
   /**
    * @description The identity and lifecycle fields.
-   * @return The field list, without `Payload__c`.
+   * @return The field list; `Payload__c` only while `selectWithPayloadByIds` runs.
    */
   public override List<SObjectField> getSObjectFieldList() {
-    return new List<SObjectField>{
+    List<SObjectField> fields = new List<SObjectField>{
       Inbound_Message__c.Name,
       Inbound_Message__c.Idempotency_Key__c,
       Inbound_Message__c.Source__c,
@@ -33,6 +38,10 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
       Inbound_Message__c.Occurred_At__c,
       Inbound_Message__c.Processed_At__c
     };
+    if (includePayload) {
+      fields.add(Inbound_Message__c.Payload__c);
+    }
+    return fields;
   }
 
   /**
@@ -57,5 +66,23 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
       }
     }
     return matches;
+  }
+
+  /**
+   * @description See `IInboundMessagesSelector.selectWithPayloadByIds`. Limits: 1 SOQL, none for
+   * an empty set.
+   * @param ids Message Ids.
+   * @return The messages with their payloads.
+   */
+  public List<Inbound_Message__c> selectWithPayloadByIds(Set<Id> ids) {
+    if (ids == null || ids.isEmpty()) {
+      return new List<Inbound_Message__c>();
+    }
+    includePayload = true;
+    try {
+      return (List<Inbound_Message__c>) query('Id IN :ids', new Map<String, Object>{ 'ids' => ids });
+    } finally {
+      includePayload = false;
+    }
   }
 }
