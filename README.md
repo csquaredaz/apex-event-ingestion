@@ -39,14 +39,31 @@ Requires the Salesforce CLI and a Dev Hub set as the default (`sf config set tar
 ## Usage
 
 ```apex
-// The shortest snippet that shows the public API doing its job.
+// Store a batch of producer messages once each. Redeliveries come back as duplicates.
+IMessageStore store = (IMessageStore) Application.Service.newInstance(IMessageStore.class);
+List<AppendResult> results = store.append(
+  new List<Inbound_Message__c>{
+    new Inbound_Message__c(
+      Source__c = 'erp',
+      External_Message_Id__c = 'ORD-1042-shipped',
+      Message_Type__c = 'order.status_changed',
+      Payload__c = '{"orderNumber":"ORD-1042","status":"Shipped"}'
+    )
+  }
+);
+for (AppendResult result : results) {
+  // ACCEPTED (new row), DUPLICATE (already stored; getMessageId() is the stored row) or REJECTED (getError()).
+  System.debug(result.getOutcome() + ' ' + result.getIdempotencyKey());
+}
 ```
 
 ## Design decisions
 
-| Decision     | Choice                                        | Rejected alternative                            | ADR                                                        |
-| ------------ | --------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
-| Distribution | Own unlocked package on apex-core-lib 1.1.0-1 | Source-only repo; a module inside apex-core-lib | [0001](docs/adr/0001-apex-event-ingestion-distribution.md) |
+| Decision      | Choice                                                                                                                                              | Rejected alternative                               | ADR                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| Distribution  | Own unlocked package on apex-core-lib 1.1.0-1                                                                                                       | Source-only repo; a module inside apex-core-lib    | [0001](docs/adr/0001-apex-event-ingestion-distribution.md) |
+| Message store | Custom object `Inbound_Message__c` with a status lifecycle, OWD Private, Processor and Viewer permission sets                                       | Big Object; no store, relying on event replay      | [0002](docs/adr/0002-message-store.md)                     |
+| Idempotency   | Producer key `Source:ExternalId` in a unique, case-sensitive field; partial-success insert in user mode, duplicates classified by `DUPLICATE_VALUE` | Payload hash; query-then-insert; upsert on the key | [0003](docs/adr/0003-producer-idempotency-key.md)          |
 
 ## Testing
 

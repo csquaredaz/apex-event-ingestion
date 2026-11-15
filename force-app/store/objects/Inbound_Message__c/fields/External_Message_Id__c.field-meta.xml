@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>External_Message_Id__c</fullName>
+    <description>The producer's own message Id. The second part of the idempotency key.</description>
+    <label>External Message Id</label>
+    <externalId>false</externalId>
+    <length>160</length>
+    <required>true</required>
+    <unique>false</unique>
+    <type>Text</type>
+</CustomField>
