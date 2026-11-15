@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Base_Delay_Minutes__c</fullName>
+    <description>Backoff after the first failed attempt; it doubles per attempt. Default 1.</description>
+    <externalId>false</externalId>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Base Delay Minutes</label>
+    <precision>4</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <unique>false</unique>
+    <type>Number</type>
+</CustomField>
