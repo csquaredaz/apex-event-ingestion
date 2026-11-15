@@ -12,4 +12,12 @@ public interface IInboundMessagesSelector extends ISelector {
    * @return The matching messages the running user can see, in user mode.
    */
   List<Inbound_Message__c> selectByIdempotencyKeys(Set<String> keys);
+
+  /**
+   * @description Selects messages by Id with the standard fields plus `Payload__c`, for dispatch.
+   * @param ids Message Ids; null or empty returns an empty list without querying.
+   * @return The messages the running user can see, in user mode.
+   * @throws QueryException If the running user can't read `Payload__c` (user mode).
+   */
+  List<Inbound_Message__c> selectWithPayloadByIds(Set<Id> ids);
 }
