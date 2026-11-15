@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Order__c</fullName>
+    <description>Run order when several routes share a type: lowest first, then by DeveloperName.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Order</label>
+    <precision>4</precision>
+    <scale>0</scale>
+    <required>true</required>
+    <unique>false</unique>
+    <type>Number</type>
+</CustomField>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description
+  >Routes a message type to one IMessageHandler class (ADR 0004). Several active rows for one type run in Order__c order as a Composite; the worst result wins.</description>
+    <label>Message Route</label>
+    <pluralLabel>Message Routes</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>
