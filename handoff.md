@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-15
+Last updated: 2026-11-15 (after PR 3)
 
 ## Done
 
@@ -18,7 +18,7 @@ Last updated: 2026-11-15
   - There is no in-memory dedupe.
   - `MessageStoreException` is thrown when the user can't create the object or its optional producer fields. The review caught the field gap.
   - ADRs 0002 and 0003 are written.
-- **PR 3 `feat/dispatch` in review (2026-11-15).** API approved 2026-11-15: `IMessageHandler`, `InboundMessage` (with `getAttempt()` and `isOlderThan`), `HandlerResult` (`SUCCESS`, `RETRYABLE`, `FATAL`), `IMessageDispatcher.dispatch(Set<Id>)` returning `Map<Id, HandlerResult>`. Internal: `GuardedMessageHandler` (Decorator), `CompositeMessageHandler`, `IMessageRouter`/`MessageRouter`, `IMessageRoutesSelector`/`MessageRoutesSelector`, `Message_Route__mdt`, three `DI_Binding` rows, `IInboundMessagesSelector.selectWithPayloadByIds`. ADRs 0004 and 0005.
+- **PR 3 `feat/dispatch` merged 2026-11-15 as `ac9ed90` (PR #3).** The ready run, 43765815593, used one CI org: 79 tests from C's 13 classes, package coverage 100%. The `main` run, 43767608949, reused that result (scratch-org job skipped) and published the badge. API approved 2026-11-15: `IMessageHandler`, `InboundMessage` (with `getAttempt()` and `isOlderThan`), `HandlerResult` (`SUCCESS`, `RETRYABLE`, `FATAL`), `IMessageDispatcher.dispatch(Set<Id>)` returning `Map<Id, HandlerResult>`. Internal: `GuardedMessageHandler` (Decorator), `CompositeMessageHandler`, `IMessageRouter`/`MessageRouter`, `IMessageRoutesSelector`/`MessageRoutesSelector`, `Message_Route__mdt`, three `DI_Binding` rows, `IInboundMessagesSelector.selectWithPayloadByIds`. ADRs 0004 and 0005.
   - Chad's design calls: results keyed by message Id (a missing one is `RETRYABLE`); a savepoint per handler call (a throw rolls back and retries all of that call); no route → `FATAL`, a broken route → `RETRYABLE`; dispatch writes no status (PR 4 does); handlers make no synchronous callouts.
   - Local run in `aei-dev`: 79 tests from C's 13 classes, 100% on every class; Code Analyzer 0 High, 0 Moderate. A mutation check (savepoint release removed) made the callout test fail, so the test can fail.
 
@@ -76,9 +76,9 @@ Last updated: 2026-11-15
 
 ## Notes for the next session
 
-- **PR 3 `feat/dispatch`** is in review. After it merges, put the handoff update as the first commit on `feat/finalizer-recovery`.
+- **Next: PR 4 `feat/finalizer-recovery`.** This branch was cut from `main` at `ac9ed90`, and its first commit is this handoff. Run probes 3, 4 and 6 in `aei-dev` first, then show the `MessageProcessorJob`, `RetrySchedule`, `Ingestion_Setting__mdt` and `MessageProcessing.enqueue` signatures before writing tests.
 - **PR 4 must:** truncate joined handler errors to `Last_Error__c` (32,768 characters; the review's one Medium finding); turn `Map<Id, HandlerResult>` into status changes (`SUCCESS` → Processed with `Processed_At__c`, `RETRYABLE` → Failed with backoff or Dead at the maximum, `FATAL` → Dead); run probes 3, 4 and 6 first. The claim DML happens before dispatch, so the no-callout rule in ADR 0004 holds either way.
-- Dev Hub on 2026-11-15, after PR 2: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs, 6/6 package creates.
+- Dev Hub on 2026-11-15, after PR 3: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs, 6/6 package creates. `aei-dev` is in sync with `main` at `ac9ed90`.
 - `aei-dev` (expires around 2026-12-13) is in sync with `main`: the store, its permission sets, the bindings and the tests are deployed, and Processor is assigned to the default user.
 - To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
