@@ -87,4 +87,83 @@ private class InboundMessagesSelectorTest {
     Assert.areEqual(0, selector.selectWithPayloadByIds(new Set<Id>()).size(), 'Empty Ids');
     Assert.areEqual(0, Limits.getQueries(), 'No SOQL spent');
   }
+
+  @IsTest
+  static void buildClaimSoql_always_locksWithABoundLimitAndNoOrderBy() {
+    String soql = new InboundMessagesSelector().buildClaimSoql();
+
+    Assert.isTrue(soql.startsWith('SELECT Id, Name, Idempotency_Key__c,'), soql);
+    Assert.isTrue(soql.contains('Attempts__c'), 'The lifecycle needs the attempt count');
+    Assert.isFalse(soql.contains('Payload__c'), 'Dispatch loads payloads separately');
+    Assert.isFalse(soql.contains('ORDER BY'), 'Rejected by the platform with FOR UPDATE');
+    Assert.isTrue(soql.endsWith(' LIMIT :maxRows FOR UPDATE'), soql);
+  }
+
+  @IsTest
+  static void selectClaimable_mixedStatuses_returnsReceivedAndDueFailedUpToTheLimit() {
+    User processor = EventIngestionTestFactory.minimumAccessUser(EventIngestionTestFactory.PROCESSOR);
+    System.runAs(processor) {
+      Datetime now = Datetime.now();
+      List<Inbound_Message__c> rows = new List<Inbound_Message__c>{
+        row('RECEIVED'),
+        row('FAILED-DUE'),
+        row('FAILED-LATER'),
+        row('PROCESSED'),
+        row('DEAD')
+      };
+      rows[1].Status__c = MessageStatuses.FAILED;
+      rows[1].Next_Attempt_At__c = now.addMinutes(-1);
+      rows[2].Status__c = MessageStatuses.FAILED;
+      rows[2].Next_Attempt_At__c = now.addMinutes(5);
+      rows[3].Status__c = MessageStatuses.PROCESSED;
+      rows[4].Status__c = MessageStatuses.DEAD;
+      insert as user rows;
+      InboundMessagesSelector selector = new InboundMessagesSelector();
+
+      Test.startTest();
+      List<Inbound_Message__c> claimed = selector.selectClaimable(now, 200);
+      List<Inbound_Message__c> limited = selector.selectClaimable(now, 1);
+      Test.stopTest();
+
+      Set<String> keys = new Set<String>();
+      for (Inbound_Message__c message : claimed) {
+        keys.add(message.External_Message_Id__c);
+      }
+      Assert.areEqual(new Set<String>{ 'RECEIVED', 'FAILED-DUE' }, keys, 'Only what is due');
+      Assert.areEqual(1, limited.size(), 'The limit is bound');
+    }
+  }
+
+  @IsTest
+  static void selectClaimable_userWithoutAccess_throwsQueryException() {
+    User outsider = EventIngestionTestFactory.minimumAccessUser(null);
+    System.runAs(outsider) {
+      try {
+        new InboundMessagesSelector().selectClaimable(Datetime.now(), 10);
+        Assert.fail('Expected QueryException');
+      } catch (QueryException e) {
+        Assert.isNotNull(e.getMessage(), 'User mode refuses the claim');
+      }
+    }
+  }
+
+  @IsTest
+  static void selectClaimable_invalidArguments_throwsIllegalArgumentException() {
+    InboundMessagesSelector selector = new InboundMessagesSelector();
+    Integer rejected = 0;
+    for (Integer maxRows : new List<Integer>{ 0, 201, null }) {
+      try {
+        selector.selectClaimable(Datetime.now(), maxRows);
+      } catch (IllegalArgumentException e) {
+        rejected++;
+      }
+    }
+    try {
+      selector.selectClaimable(null, 10);
+    } catch (IllegalArgumentException e) {
+      rejected++;
+    }
+    Assert.areEqual(4, rejected, 'Out-of-range limits and a null time are rejected');
+    Assert.areEqual(0, Limits.getQueries(), 'No SOQL spent');
+  }
 }

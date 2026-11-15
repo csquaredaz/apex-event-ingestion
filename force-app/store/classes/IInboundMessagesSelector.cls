@@ -20,4 +20,17 @@ public interface IInboundMessagesSelector extends ISelector {
    * @throws QueryException If the running user can't read `Payload__c` (user mode).
    */
   List<Inbound_Message__c> selectWithPayloadByIds(Set<Id> ids);
+
+  /**
+   * @description Claims up to `maxRows` messages that are due for processing: `Received`, or
+   * `Failed` with `Next_Attempt_At__c` at or before `now`. The rows are locked `FOR UPDATE` until
+   * the transaction ends, so a concurrent claim waits and then skips them (ADR 0006). Rows come in
+   * Id order, the only order the platform allows with a lock.
+   * @param now The time a `Failed` message must be due by.
+   * @param maxRows The most rows to claim, from 1 to 200.
+   * @return The claimed messages the running user can see, in user mode, without the payload.
+   * @throws QueryException If another transaction holds the lock for more than 10 seconds
+   * ("Record Currently Unavailable"), or the running user can't read the fields (user mode).
+   */
+  List<Inbound_Message__c> selectClaimable(Datetime now, Integer maxRows);
 }
