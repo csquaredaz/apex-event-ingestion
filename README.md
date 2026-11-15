@@ -57,6 +57,12 @@ for (AppendResult result : results) {
 }
 ```
 
+Then start processing. At most one processor job is queued at a time, so it's safe to call after every batch; outcomes and retries are recorded on each row (`Status__c`, `Attempts__c`, `Next_Attempt_At__c`, `Last_Error__c`):
+
+```apex
+MessageProcessing.enqueue();
+```
+
 Handle a message type with a bulk Command, then route it with a `Message_Route__mdt` row (`Message_Type__c = order.status_changed`, `Handler_Class__c = OrderStatusChangedHandler`):
 
 ```apex
@@ -74,13 +80,14 @@ public with sharing class OrderStatusChangedHandler implements IMessageHandler {
 
 ## Design decisions
 
-| Decision      | Choice                                                                                                                                                                                          | Rejected alternative                                        | ADR                                                        |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
-| Distribution  | Own unlocked package on apex-core-lib 1.1.0-1                                                                                                                                                   | Source-only repo; a module inside apex-core-lib             | [0001](docs/adr/0001-apex-event-ingestion-distribution.md) |
-| Message store | Custom object `Inbound_Message__c` with a status lifecycle, OWD Private, Processor and Viewer permission sets                                                                                   | Big Object; no store, relying on event replay               | [0002](docs/adr/0002-message-store.md)                     |
-| Idempotency   | Producer key `Source:ExternalId` in a unique, case-sensitive field; partial-success insert in user mode, duplicates classified by `DUPLICATE_VALUE`                                             | Payload hash; query-then-insert; upsert on the key          | [0003](docs/adr/0003-producer-idempotency-key.md)          |
-| Dispatch      | Bulk Command `IMessageHandler` routed by `Message_Route__mdt`; several routes form a Composite where the worst result wins; each handler is guarded by a savepoint (so no synchronous callouts) | One call per message; Chain of Responsibility; no savepoint | [0004](docs/adr/0004-command-composite-dispatch.md)        |
-| Ordering      | No ordering guarantee; handlers skip stale updates with `InboundMessage.isOlderThan`                                                                                                            | Per-record sequencing; a single ordered job                 | [0005](docs/adr/0005-no-ordering-guarantee.md)             |
+| Decision      | Choice                                                                                                                                                                                                                                                                                       | Rejected alternative                                                      | ADR                                                        |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Distribution  | Own unlocked package on apex-core-lib 1.1.0-1                                                                                                                                                                                                                                                | Source-only repo; a module inside apex-core-lib                           | [0001](docs/adr/0001-apex-event-ingestion-distribution.md) |
+| Message store | Custom object `Inbound_Message__c` with a status lifecycle, OWD Private, Processor and Viewer permission sets                                                                                                                                                                                | Big Object; no store, relying on event replay                             | [0002](docs/adr/0002-message-store.md)                     |
+| Idempotency   | Producer key `Source:ExternalId` in a unique, case-sensitive field; partial-success insert in user mode, duplicates classified by `DUPLICATE_VALUE`                                                                                                                                          | Payload hash; query-then-insert; upsert on the key                        | [0003](docs/adr/0003-producer-idempotency-key.md)          |
+| Dispatch      | Bulk Command `IMessageHandler` routed by `Message_Route__mdt`; several routes form a Composite where the worst result wins; each handler is guarded by a savepoint (so no synchronous callouts)                                                                                              | One call per message; Chain of Responsibility; no savepoint               | [0004](docs/adr/0004-command-composite-dispatch.md)        |
+| Ordering      | No ordering guarantee; handlers skip stale updates with `InboundMessage.isOlderThan`                                                                                                                                                                                                         | Per-record sequencing; a single ordered job                               | [0005](docs/adr/0005-no-ordering-guarantee.md)             |
+| Recovery      | `MessageProcessorJob` claims a batch with a `FOR UPDATE` row lock, dispatches and records outcomes in one transaction; its Finalizer recovers a failed job's messages (`Failed` with exponential backoff, or `Dead`) and enqueues the next run; one duplicate signature keeps one job queued | A stored `Processing` status; two jobs per batch; chaining from `execute` | [0006](docs/adr/0006-queueable-finalizer-recovery.md)      |
 
 ## Testing
 
