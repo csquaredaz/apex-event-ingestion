@@ -22,4 +22,12 @@
         <field>Max_Delay_Minutes__c</field>
         <value xsi:type="xsd:double">60</value>
     </values>
+    <values>
+        <field>Intake_Batch_Size__c</field>
+        <value xsi:type="xsd:double">200</value>
+    </values>
+    <values>
+        <field>Intake_Payload_Budget__c</field>
+        <value xsi:type="xsd:double">3000000</value>
+    </values>
 </CustomMetadata>

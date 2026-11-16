@@ -13,7 +13,7 @@ Integrations deliver messages at least once. Producers retry, Platform Events re
 
 ```mermaid
 flowchart LR
-  producer[Producer] -->|Inbound_Message__e| intake[Intake trigger]
+  producer[Producer] -->|Inbound_Message_Event__e| intake[Intake trigger]
   producer -.->|large payload| files[(ContentVersion)]
   intake --> store[(Inbound_Message__c)]
   intake --> job[MessageProcessorJob]
@@ -37,6 +37,21 @@ npm run org:test
 Requires the Salesforce CLI and a Dev Hub set as the default (`sf config set target-dev-hub=<alias>`).
 
 ## Usage
+
+Producers publish an event (the running user needs the `Event_Ingestion_Publisher` permission set). The intake trigger stores each message once, as the Automated Process user, and starts processing:
+
+```apex
+EventBus.publish(
+  new Inbound_Message_Event__e(
+    Source__c = 'erp',
+    External_Message_Id__c = 'ORD-1042-shipped',
+    Message_Type__c = 'order.status_changed',
+    Payload__c = '{"orderNumber":"ORD-1042","status":"Shipped"}'
+  )
+);
+```
+
+Apex producers that want a result per message can call the store directly instead (the running user needs `Event_Ingestion_Processor`):
 
 ```apex
 // Store a batch of producer messages once each. Redeliveries come back as duplicates.
@@ -88,6 +103,7 @@ public with sharing class OrderStatusChangedHandler implements IMessageHandler {
 | Dispatch      | Bulk Command `IMessageHandler` routed by `Message_Route__mdt`; several routes form a Composite where the worst result wins; each handler is guarded by a savepoint (so no synchronous callouts)                                                                                              | One call per message; Chain of Responsibility; no savepoint               | [0004](docs/adr/0004-command-composite-dispatch.md)        |
 | Ordering      | No ordering guarantee; handlers skip stale updates with `InboundMessage.isOlderThan`                                                                                                                                                                                                         | Per-record sequencing; a single ordered job                               | [0005](docs/adr/0005-no-ordering-guarantee.md)             |
 | Recovery      | `MessageProcessorJob` claims a batch with a `FOR UPDATE` row lock, dispatches and records outcomes in one transaction; its Finalizer recovers a failed job's messages (`Failed` with exponential backoff, or `Dead`) and enqueues the next run; one duplicate signature keeps one job queued | A stored `Processing` status; two jobs per batch; chaining from `execute` | [0006](docs/adr/0006-queueable-finalizer-recovery.md)      |
+| Intake        | High-volume `Inbound_Message_Event__e` (Publish After Commit); the trigger takes up to 200 events or 3,000,000 payload characters per run with a resume checkpoint, retries every failure and alerts on the last retry; stored and processed by the Automated Process user                   | Direct store calls only; an Apex REST endpoint; giving up after 3 retries | [0007](docs/adr/0007-platform-event-intake.md)             |
 
 ## Testing
 

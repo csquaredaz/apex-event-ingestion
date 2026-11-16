@@ -6,7 +6,8 @@
  * Subject:  IngestionSettings.current
  * Mocks:    the Ingestion_Setting__mdt row (in memory)
  * Bulk:     not applicable (one settings row)
- * Negative: no row, blank and zero fields, a batch size above 200, a max delay below the base
+ * Negative: no row, blank and zero fields, a batch size above 200, an intake batch above 2,000,
+ *           a max delay below the base
  */
 @IsTest
 private class IngestionSettingsTest {
@@ -20,6 +21,8 @@ private class IngestionSettingsTest {
     Assert.isTrue(settings.getRetrySchedule().isExhausted(5), 'Five attempts');
     Assert.isFalse(settings.getRetrySchedule().isExhausted(4), 'Not four');
     Assert.areEqual(NOW.addMinutes(60), settings.getRetrySchedule().nextAttemptAt(10, NOW), 'Capped at 60');
+    Assert.areEqual(200, settings.getIntakeBatchSize(), 'Ingestion_Setting.Default intake batch');
+    Assert.areEqual(3000000, settings.getIntakePayloadBudget(), 'Ingestion_Setting.Default payload budget');
   }
 
   @IsTest
@@ -73,5 +76,22 @@ private class IngestionSettingsTest {
     } catch (IllegalArgumentException e) {
       Assert.isTrue(e.getMessage().contains('maxDelayMinutes'), e.getMessage());
     }
+  }
+
+  @IsTest
+  static void current_intakeFields_useTheRowOrTheDefaultsAndCapTheBatchAt2000() {
+    IngestionSettings.row = new Ingestion_Setting__mdt(Intake_Batch_Size__c = 50, Intake_Payload_Budget__c = 1000);
+    IngestionSettings fromRow = IngestionSettings.current();
+    IngestionSettings.row = new Ingestion_Setting__mdt(Intake_Batch_Size__c = 5000, Intake_Payload_Budget__c = 0);
+    IngestionSettings capped = IngestionSettings.current();
+
+    Assert.areEqual(50, fromRow.getIntakeBatchSize(), 'Intake batch from the row');
+    Assert.areEqual(1000, fromRow.getIntakePayloadBudget(), 'Budget from the row');
+    Assert.areEqual(2000, capped.getIntakeBatchSize(), 'The most a Platform Event trigger receives');
+    Assert.areEqual(
+      IngestionSettings.DEFAULT_INTAKE_PAYLOAD_BUDGET,
+      capped.getIntakePayloadBudget(),
+      'Zero means default'
+    );
   }
 }

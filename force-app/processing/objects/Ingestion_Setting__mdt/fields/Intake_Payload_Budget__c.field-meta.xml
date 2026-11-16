@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Intake_Payload_Budget__c</fullName>
+    <description
+  >Payload characters one intake trigger run takes before it sets a resume checkpoint; at least one event is always taken. Default 3,000,000, which fits the async heap (ADR 0007).</description>
+    <externalId>false</externalId>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Intake Payload Budget</label>
+    <precision>9</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <unique>false</unique>
+    <type>Number</type>
+</CustomField>

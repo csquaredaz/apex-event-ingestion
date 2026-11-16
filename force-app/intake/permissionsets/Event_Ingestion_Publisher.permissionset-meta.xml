@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description
+  >For producers: publish Inbound_Message_Event__e. EventBus.publish checks Create on the event for the running user, even from Apex; Read is required with Create (ADR 0007).</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Event Ingestion Publisher</label>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Inbound_Message_Event__e</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+</PermissionSet>

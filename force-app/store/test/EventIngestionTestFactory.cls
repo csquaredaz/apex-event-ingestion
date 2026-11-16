@@ -46,6 +46,44 @@ public class EventIngestionTestFactory {
   }
 
   /**
+   * @description An unpublished intake event carrying the same fields as `message`.
+   * @param source The producing system.
+   * @param externalMessageId The producer's message Id.
+   * @return The event.
+   */
+  public static Inbound_Message_Event__e event(String source, String externalMessageId) {
+    Inbound_Message__c message = message(source, externalMessageId);
+    return new Inbound_Message_Event__e(
+      Source__c = message.Source__c,
+      External_Message_Id__c = message.External_Message_Id__c,
+      Message_Type__c = message.Message_Type__c,
+      Payload__c = message.Payload__c,
+      Correlation_Id__c = message.Correlation_Id__c,
+      Occurred_At__c = message.Occurred_At__c
+    );
+  }
+
+  /**
+   * @description Delivered intake events from `SOURCE` with Ids `ORD-0000`, `ORD-0001`, …, and
+   * replay Ids `1`, `2`, … The read-only `ReplayId` and `EventUuid` are set with `JSON.deserialize`.
+   * @param count How many.
+   * @return The events.
+   */
+  public static List<Inbound_Message_Event__e> deliveredEvents(Integer count) {
+    List<Inbound_Message_Event__e> events = new List<Inbound_Message_Event__e>();
+    for (Integer i = 0; i < count; i++) {
+      Map<String, Object> fields = event(SOURCE, 'ORD-' + String.valueOf(i).leftPad(4, '0'))
+        .getPopulatedFieldsAsMap()
+        .clone();
+      fields.put('ReplayId', String.valueOf(i + 1));
+      fields.put('EventUuid', 'uuid-' + i);
+      fields.put('attributes', new Map<String, Object>{ 'type' => 'Inbound_Message_Event__e' });
+      events.add((Inbound_Message_Event__e) JSON.deserialize(JSON.serialize(fields), Inbound_Message_Event__e.class));
+    }
+    return events;
+  }
+
+  /**
    * @description A successful save result, built with `JSON.deserialize` because the type has no
    * public constructor.
    * @param recordId The Id it reports.
