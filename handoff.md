@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-16 (after PR 8)
+Last updated: 2026-11-16 (release 1.0.0, PR 9)
 
 ## Done
 
@@ -47,6 +47,13 @@ Last updated: 2026-11-16 (after PR 8)
   - Built: `OrderStatusChange`, `IOrdersSelector`/`OrdersSelector` (`DI_Binding.Orders_Selector`), `OrderMessageHandler` (Template Method base), `OrderStatusChangedHandler`, `ShipmentRecordedHandler`, two `Message_Route__mdt` rows (Order 10 and 20), `Shipment__c`, `Event_Ingestion_Example`; tests `OrderStatusChangeTest`, `OrderStatusChangedHandlerTest`, `ShipmentRecordedHandlerTest`, `OrdersSelectorTest`, `IngestionEndToEndTest` (no mocks), plus the `OrderTestFactory` fixture. `scripts/org-setup.sh` assigns permission sets from every package directory.
   - Local CI replay in `aei-dev`: 238 tests from 37 classes, all passing, 100% of the 35 own classes; Code Analyzer 0 High, 0 Moderate. Mutation check (the stale guard removed) failed 2 tests, one unit and one end-to-end. Found by the tests: `Event_Ingestion_Example` needs FLS on `Order.OrderReferenceNumber`.
   - The live check's rows (Account "Live check customer", Order `LIVE-0001`, Shipment `LIVE-TRK-1`, message `LIVE-0001-shipped`) are still in `aei-dev`; auto mode denied `sf data delete record`.
+- **Release `1.0.0-1` = `04tak000000utQ1AAI`, promoted 2026-11-16.** GitHub release `v1.0.0` is Latest. Package `apex-event-ingestion` = `0Hoak0000007g7NCAQ` (Unlocked, no namespace), created 2026-11-16; `sf package create` rewrote `sfdx-project.json` as in B, so it was restored with only the alias kept.
+  - No skip-validation build first (owner's call): it would have made the release `1.0.0-2`.
+  - **The first `v1.0.0` build failed** (release run 43950390361, at `2262120`): 17 package tests failed in the build org, which runs them as an admin with none of the package's permission sets. `MessageStore.append`'s create check is real even with the DML mocked (15 tests), and the scheduled sweeper's user-mode query needs field access (2). CI had hidden it, because `org-setup.sh` assigned every permission set to the default user. It cost one version create and no build number. Reproduced in `aei-dev` by removing the assignments (plus one `example/` test whose `Order` arrangement needed field access).
+  - **PR 10 `fix/tests-without-permsets` merged as `d82e6c3` (PR #10):** the store tests append as a Minimum Access user with `Event_Ingestion_Processor`, the schedule tests schedule as one with `Event_Ingestion_Sweeper`, the end-to-end arrangement runs in system mode, and `org-setup.sh` takes `SKIP_PERMSETS=1`, which `ci.yml` sets. Ready run 43952923194: 238/238 from 37 classes with no permission sets, 100%. The `main` run 43953934143 reused it.
+  - `main` was merged into `docs/release-1.0.0` (`6f82bc5`), the failed tag deleted, and `v1.0.0` re-tagged there with the owner's approval. Release run 43954665032: `1.0.0.1`, coverage 100%, gate passed. Promote run 43958246899 (owner).
+  - **Smoke test in a fresh `aei-smoke` org:** A `1.1.0-1`, then the beta, then `example/` as source; no permission sets during the tests. 238/238 passed from 37 classes (force-app's 32 from the 04t, example's 5 from source). A live event was stored and processed as Automated Process (Processed, attempt 1); order `SMOKE-0001` read `Shipped` and `Shipment__c` `SMOKE-TRK-1` was created: the packaged `Type.forName` resolves source handlers (probe 5's second half). The owner deletes the org.
+- **PR 9 `docs/release-1.0.0`:** the `0Ho` and `apex-event-ingestion@1.0.0-1` aliases, the README Install section (A, then C, then optionally `example/`), a Testing note on CI's no-permission-set org, and this handoff. `org-setup.sh` stays a source deploy for contributors.
 
 ## Approved design
 
@@ -72,7 +79,7 @@ Last updated: 2026-11-16 (after PR 8)
 6. `feat/claim-check`: `IPayloadResolver`, `ContentVersionPayloadResolver`, the claim path in `MessageStore` and `MessageDispatcher`, a size cap. ADR 0008.
 7. `feat/stall-detection`: `StallDetector`, `StallSweeperSchedulable`, alert through `IAlertSink`, the scheduling script. ADR 0009.
 8. `feat/example-and-docs`: unpackaged `example/` (`OrderStatusChangedHandler` upserting `Order` by `OrderReferenceNumber`, a second handler so one route is a Composite, route rows), `IngestionEndToEndTest`, the full README, the case study and the `## 1.0.0` changelog section.
-9. `docs/release-1.0.0`: after the owner approves the tag and promotes, the `04t` alias, README install and handoff.
+9. `docs/release-1.0.0`: after the owner approves the tag and promotes, the `04t` alias, README install and handoff. **Done**, with PR 10 (`fix/tests-without-permsets`) added before the tag.
 
 ## What C's first PRs prove for E's template
 
@@ -90,7 +97,7 @@ Last updated: 2026-11-16 (after PR 8)
    5b. **Proven 2026-11-15:** while a savepoint is active, every callout throws "All active Savepoints must be released before making callouts", even after a rollback. `Database.releaseSavepoint` lifts it, also after DML and a rollback. `HttpCalloutMock` enforces the same rule in tests.
 6. **Proven 2026-11-15 in `aei-dev`:** three concurrent user-mode `FOR UPDATE` claims took turns and got 50, 30 and 0 of 80 rows, none twice. A waiter past 10 s gets a catchable `QueryException` ("Record Currently Unavailable"). `ORDER BY` with `FOR UPDATE` is rejected. A Processor user can claim but not update a message another user owns (`INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY`).
 7. **Proven 2026-11-16 in `aei-dev`:** the Automated Process user (trigger and Queueable) reads every `ContentVersion` and its `VersionData` in user mode, with or without a `ContentDocumentLink`, and can link a file it doesn't own. A user-mode `ContentDocument` query returns nothing unless the file is shared with the user directly. `VersionData` costs about its size in heap; `toString()` doubles it until the blob is released. `Limits.getLimitHeapSize()` reported 10,000,000 (trigger) and 25,000,000 (job); the design keeps to the documented 6/12 MB. A test showed `Blob.toString()` throws `StringException` on invalid UTF-8.
-8. A skip-validation package build (from the 500/day budget) before tagging.
+8. A skip-validation package build (from the 500/day budget) before tagging. **Not run** (owner's call, 2026-11-16): the validated build was the probe, and its failure cost one of the 6 daily creates but no build number.
 
 ## Open decisions
 
@@ -100,8 +107,8 @@ Last updated: 2026-11-16 (after PR 8)
 
 ## Notes for the next session
 
-- **Next: PR 9 `docs/release-1.0.0`.** This branch was cut from `main` at `c4fa3e4`, and its first commit is this handoff (pushed, no PR). Then the owner approves the `v1.0.0` tag, promotes, and PR 9 adds the `04t` alias, README install steps and the install-as-04t smoke test (run only `force-app` `*Test` classes against the installed package; `example/` deploys as source on top).
-- `aei-dev` (expires around 2026-12-13) is in sync with `main` at `c4fa3e4` (package and `example/`), and `Event_Ingestion_Example` is assigned to the default user. The stall sweeper is **not** scheduled there, on purpose.
-- Dev Hub on 2026-11-16, after PR 8: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 4/6 daily scratch orgs, 6/6 package version creates.
-- To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
+- **Next: going public**, the gated sequence planned separately: fix any leak sources first (a PR only if the scan finds something), delete the old CI runs, scan the remaining logs and the PR text, then flip visibility. All 10 PRs are merged once PR 9 is.
+- `aei-dev` (expires around 2026-12-13) has A `1.1.0-1` and **source** (never the beta) and is in sync with `main`; all five permission sets are assigned to the default user again after the PR 10 reproduction. The stall sweeper is **not** scheduled there, on purpose. Install the promoted `04tak000000utQ1AAI` only into a fresh org.
+- The live-check rows from PR 8 (Account "Live check customer", Order `LIVE-0001`, Shipment `LIVE-TRK-1`, message `LIVE-0001-shipped`) are still in `aei-dev`.
+- To reproduce the package build org locally, remove the default user's package permission set assignments (anonymous Apex delete of `PermissionSetAssignment`; there is no `sf org unassign permset`), run `npm run org:test`, then re-assign them.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
