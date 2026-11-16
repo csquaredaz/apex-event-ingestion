@@ -29,5 +29,5 @@ The dispatcher makes no promise about order, within a batch or across batches. `
 - A handler that updates state stores the time of the last change it applied, for example a `Status_Changed_At__c` on the target. It answers `SUCCESS` for a stale message (handled by doing nothing), not `FATAL`.
 - Producers that leave out `Occurred_At__c` get last-writer-wins.
 - Clock skew between producers can let a message that really is older win. A producer with its own sequence number can compare that instead; `isOlderThan` is a convenience, not a requirement.
-- The `example/` handler in PR 8 shows the pattern on `Order`.
+- `OrderStatusChangedHandler` in `example/` shows the pattern on `Order`: it skips a message older than `Status_Changed_At__c`, keeps only the newest of several changes for one order in a batch, and leaves the time alone when a message has none. `IngestionEndToEndTest` proves a stale change leaves the order as it was.
 - Revisit if a message type truly needs ordering, for example events that only make sense as a sequence. A per-key sequence would be its own ADR.
