@@ -209,6 +209,7 @@ jobs:
             exit 0
           fi
           # The classes this repo ships, measured for coverage: not tests, and not interfaces (no lines).
+          # That includes the unpackaged example/ handlers, held to the same floor (ADR 0001).
           # shellcheck disable=SC2086
           find $dirs -name '*.cls' -exec grep -Li '@istest' {} + | xargs grep -LiE '^\s*(public|global)\s+interface\s' \
             | xargs -n1 basename | sed 's/\.cls$//' | sort > "$RUNNER_TEMP/package-classes.txt" || true
@@ -248,7 +249,7 @@ jobs:
             fs.writeFileSync("tests/apex/package-coverage.txt", `${coverage}\n`);
             const min = Number(process.env.MIN_COVERAGE);
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-              `### Apex tests\n\n| Outcome | Tests | Failing | Package coverage | Floor |\n|---|---|---|---|---|\n| ${s.outcome} | ${s.testsRan} | ${s.failing} | ${coverage}% | ${min}% |\n`);
+              `### Apex tests\n\n| Outcome | Tests | Failing | Coverage (package + example) | Floor |\n|---|---|---|---|---|\n| ${s.outcome} | ${s.testsRan} | ${s.failing} | ${coverage}% | ${min}% |\n`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `coverage=${coverage}\n`);
             if (s.outcome !== "Passed") { console.error(`${s.failing} Apex test(s) failed.`); process.exit(1); }
             if (missing.length) { console.error(`No test touches: ${missing.join(", ")}.`); process.exit(1); }

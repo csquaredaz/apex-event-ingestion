@@ -24,9 +24,12 @@ done
 
 sf project deploy start --target-org "$alias_name" --wait 20
 
-# Assign every permission set this repo ships, so the default user can exercise the features.
-# (find, not **, because macOS ships bash 3.2 without globstar.)
-find force-app -name '*.permissionset-meta.xml' | while read -r ps; do
+# Assign every permission set in the package directories (the package and the unpackaged example/),
+# so the default user can exercise the features. (find, not **, because macOS ships bash 3.2 without
+# globstar.)
+dirs=$(node -p 'require("./sfdx-project.json").packageDirectories.map((d) => d.path).join(" ")')
+# shellcheck disable=SC2086 # word splitting over the directory list is intended
+find $dirs -name '*.permissionset-meta.xml' | while read -r ps; do
   sf org assign permset --name "$(basename "$ps" .permissionset-meta.xml)" --target-org "$alias_name"
 done
 
