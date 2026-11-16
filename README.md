@@ -18,14 +18,24 @@ flowchart LR
   intake --> store[(Inbound_Message__c)]
   intake --> job[MessageProcessorJob]
   job --> router[MessageRouter]
-  router --> handlers[IMessageHandler commands]
+  router -->|Message_Route__mdt| composite[CompositeMessageHandler]
+  composite --> orderHandler[OrderStatusChangedHandler]
+  composite --> shipmentHandler[ShipmentRecordedHandler]
+  orderHandler --> orders[(Order)]
+  shipmentHandler --> shipments[(Shipment__c)]
   job -.->|resolve claim| files
   job --> finalizer[MessageProcessorFinalizer]
   finalizer --> store
   sweeper[StallSweeperSchedulable] -->|read due| store
   sweeper -->|Processor_Wake_Event__e| wake[Wake trigger]
   wake --> job
+  subgraph example["example/ (unpackaged)"]
+    orderHandler
+    shipmentHandler
+  end
 ```
+
+Everything outside `example/` is the package (`force-app/`, by feature: `store`, `dispatch`, `processing`, `intake`, `claim`, `stall`). `example/` is an unpackaged subscriber-org sample: two handlers on one message type, so the route is a Composite.
 
 ## Quick start
 
@@ -35,7 +45,16 @@ npm run org:setup
 npm run org:test
 ```
 
-Requires the Salesforce CLI and a Dev Hub set as the default (`sf config set target-dev-hub=<alias>`).
+Requires the Salesforce CLI and a Dev Hub set as the default (`sf config set target-dev-hub=<alias>`). `org:setup` creates a scratch org, installs apex-core-lib `1.1.0-1`, deploys the package and `example/`, and assigns every permission set to you. `org:test` runs this repo's own test classes, the same set CI runs.
+
+Two more steps make a real org self-healing. An unlocked package can't run a post-install script, so they are manual:
+
+1. Assign `Event_Ingestion_Sweeper` to the user who will schedule the stall sweeper, plus whatever your `IAlertSink` binding needs (apex-platform-logging's Slack sink needs principal access on its External Credential).
+2. As that user, schedule the sweeper: `npm run org:schedule-sweeper -- --target-org <alias>`. It adds four jobs (`:00`, `:15`, `:30`, `:45`); running it twice fails with "already scheduled" and changes nothing.
+
+The Automated Process user stores and processes every message, with no permission set (ADR 0007). Producers need `Event_Ingestion_Publisher`; operators get `Event_Ingestion_Viewer`.
+
+Then try it: publish the event in [Usage](#usage) for an order whose `OrderReferenceNumber` is `ORD-1042`, and within seconds the order's `Fulfilment_Status__c` reads `Shipped` and a `Shipment__c` exists.
 
 ## Usage
 
@@ -47,7 +66,8 @@ EventBus.publish(
     Source__c = 'erp',
     External_Message_Id__c = 'ORD-1042-shipped',
     Message_Type__c = 'order.status_changed',
-    Payload__c = '{"orderNumber":"ORD-1042","status":"Shipped"}'
+    Occurred_At__c = Datetime.now(),
+    Payload__c = '{"orderNumber":"ORD-1042","status":"Shipped","carrier":"Acme Freight","trackingNumber":"1Z-1042"}'
   )
 );
 ```
@@ -98,26 +118,41 @@ Then start processing. At most one processor job is queued at a time, so it's sa
 MessageProcessing.enqueue();
 ```
 
-Schedule the stall sweeper once per org. An unlocked package can't run a post-install script, so this is a setup step. It runs every 15 minutes as the user who schedules it (assign `Event_Ingestion_Sweeper` first), wakes processing for retries and lost runs, and sends a WARNING alert when a message has been due for more than 30 minutes:
+The sweeper (Quick start, step 2) runs every 15 minutes, wakes processing for retries and lost runs, and sends a WARNING alert when a message has been due for more than 30 minutes.
 
-```bash
-npm run org:schedule-sweeper -- --target-org <alias>
-```
+### Handling a message type
 
-Handle a message type with a bulk Command, then route it with a `Message_Route__mdt` row (`Message_Type__c = order.status_changed`, `Handler_Class__c = OrderStatusChangedHandler`):
+A handler is a bulk Command: `IMessageHandler.handle(List<InboundMessage>)` returns one `HandlerResult` per message: `SUCCESS`, `RETRYABLE` (a later attempt might work) or `FATAL` (it never will). Name it in a `Message_Route__mdt` row; two rows for one type make a Composite, run in `Order__c` order, where the worst result per message wins. The contract, from `IMessageHandler`: be idempotent, assume no order, make no synchronous callouts, and report rather than throw.
+
+[`example/`](example/orders) shows all of it on `order.status_changed`:
+
+| Route `Order__c` | Handler                     | Does                                                                                                                                    |
+| ---------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 10               | `OrderStatusChangedHandler` | Upserts the order's `Fulfilment_Status__c` keyed on `OrderReferenceNumber`; skips a change older than `Status_Changed_At__c` (ADR 0005) |
+| 20               | `ShipmentRecordedHandler`   | On `Shipped`, upserts a `Shipment__c` keyed on the unique `Tracking_Number__c`, so a resent message updates the same shipment           |
+
+Both extend `OrderMessageHandler` (Template Method), which parses every payload, finds the orders in one query and answers the common cases: an unparseable payload is `FATAL`, an unknown order is `RETRYABLE` (it may not have arrived yet), and a reference number shared by two orders is `FATAL`. The subclass applies the rest with one Unit of Work commit:
 
 ```apex
-public with sharing class OrderStatusChangedHandler implements IMessageHandler {
-  public List<HandlerResult> handle(List<InboundMessage> messages) {
-    List<HandlerResult> results = new List<HandlerResult>();
-    for (InboundMessage message : messages) {
-      // Parse, then apply in bulk after the loop. Idempotent, order-free, no synchronous callouts.
-      results.add(HandlerResult.success(message.getMessageId()));
+protected override List<HandlerResult> apply(List<OrderStatusChange> changes, Map<String, Order> orderByNumber) {
+  List<HandlerResult> results = new List<HandlerResult>();
+  Map<String, OrderStatusChange> newestByNumber = new Map<String, OrderStatusChange>();
+  for (OrderStatusChange change : changes) {
+    String orderKey = key(change.getOrderNumber());
+    OrderStatusChange current = newestByNumber.get(orderKey);
+    Boolean stale = change.getMessage().isOlderThan(orderByNumber.get(orderKey).Status_Changed_At__c);
+    if (!stale && (current == null || !change.isOlderThan(current))) {
+      newestByNumber.put(orderKey, change);
     }
-    return results;
+    // Every change succeeds: a stale or superseded one is handled by doing nothing.
+    results.add(HandlerResult.success(change.getMessage().getMessageId()));
   }
+  // … one registerUpsert(…, Order.OrderReferenceNumber) and one commitWork() for the newest per order.
+  return results;
 }
 ```
+
+`example/` is not part of the package. It's a second package directory, so `org:setup` deploys it and CI tests and gates it like the package (ADR 0001), while `sf package version create` builds only `force-app/`. To use the package in your own org, write handlers like these in your org's source and add route rows; no new package version is needed.
 
 ## Design decisions
 
@@ -132,23 +167,27 @@ public with sharing class OrderStatusChangedHandler implements IMessageHandler {
 | Intake        | High-volume `Inbound_Message_Event__e` (Publish After Commit); the trigger takes up to 200 events or 3,000,000 payload characters per run with a resume checkpoint, retries every failure and alerts on the last retry; stored and processed by the Automated Process user                   | Direct store calls only; an Apex REST endpoint; giving up after 3 retries | [0007](docs/adr/0007-platform-event-intake.md)             |
 | Claim Check   | A payload over 131,072 characters travels as a `ContentVersion` Id in `Payload_Ref__c`; the store accepts it only from the user who uploaded that version, within 3,000,000 bytes; one processor job dispatches at most 4,000,000 payload characters and bytes                               | Trusting file visibility; a link to the message record; a library         | [0008](docs/adr/0008-claim-check.md)                       |
 | Stall sweep   | Four 15-minute schedules read due messages and publish `Processor_Wake_Event__e`, so the job runs as the Automated Process user; one WARNING per sweep for messages due over 30 minutes                                                                                                      | Enqueue as the scheduler with Modify All; system-mode status writes       | [0009](docs/adr/0009-stall-sweeper.md)                     |
+| Example       | Unpackaged `example/` as a second package directory: deployed by `org:setup`, tested and gated by CI with the package, never in the package version; ships a permission set and no profile                                                                                                   | A separate CI deploy step; excluding it from the coverage gate            | [0001](docs/adr/0001-apex-event-ingestion-distribution.md) |
 
 ## Testing
 
-| Layer                       | What it proves                                        | Run it              |
-| --------------------------- | ----------------------------------------------------- | ------------------- |
-| Apex unit (Stub API mocks)  | Service and domain behaviour in isolation             | `npm run org:test`  |
-| Apex integration (real DML) | Trigger → service → commit, as a least-privilege user | `npm run org:test`  |
-| Static analysis             | Zero High or Critical Code Analyzer findings          | `npm run analyze`   |
-| LWC (Jest)                  | Component behaviour                                   | `npm run test:unit` |
+| Layer                       | What it proves                                                                                                                                                                                   | Run it             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| Apex unit (Stub API mocks)  | Each class's behaviour in isolation: selectors, the store, dispatch, the lifecycle, the job and Finalizer (with a fake `FinalizerContext`), intake, claims, the sweeper and the example handlers | `npm run org:test` |
+| Apex integration (real DML) | Real event deliveries through the trigger, store, job and lifecycle, as Minimum Access users with and without each permission set; 200-record bulk cases                                         | `npm run org:test` |
+| End to end                  | `IngestionEndToEndTest`: publish → store → Composite dispatch → `Order` and `Shipment__c` written, with nothing mocked: bulk, redelivery, stale, unknown-order and worst-result-wins cases       | `npm run org:test` |
+| Static analysis             | Zero High or Critical Code Analyzer findings (CI gate); this repo also keeps zero Moderate                                                                                                       | `npm run analyze`  |
 
-CI runs every layer on each PR in a fresh scratch org, then deletes the org.
+`org:test` runs only this repo's `*Test` classes (`--class-names`), because `RunLocalTests` would also run apex-core-lib's packaged tests (ADR 0001). CI does the same in a fresh scratch org on every non-draft PR and fails unless every test passes and coverage of this repo's own classes, the package's and `example/`'s, is at least 90%; it's 100%. Tests cover what coverage can't: a Finalizer that can't be forced to fail in a test is driven with a fake context, the Automated Process user's access is exercised through real deliveries, and a mutation check per feature (the payload truncation, the uploader check, the wake call, the stale guard) confirmed the tests fail when the behaviour goes. There's no LWC, so `npm run test:unit` has nothing to run.
+
+Deliberately left out, because this repo is free only: coverage SaaS (the badge is a shields.io endpoint on the `badges` branch), paid scanners and any CI step that calls a model.
 
 ## Built with Claude Code
 
-- **Standards:** this repo's [`CLAUDE.md`](CLAUDE.md) and the [`apex-standards`](https://github.com/csquaredaz/claude-code-salesforce-skills) plugin (`apex-fflib-layers`, `apex-security`, `apex-testing`, `apex-code-review`).
-- **One concrete example:** <!-- what Claude Code drafted, what the review caught or changed, and the commit or PR where it happened. -->
-- **How AI work is reviewed:** every AI-assisted commit carries a `Co-Authored-By: Claude` trailer, goes through a PR with CI, and is reviewed against the same standards.
+- **Standards:** this repo's [`CLAUDE.md`](CLAUDE.md) and the [`apex-standards`](https://github.com/csquaredaz/claude-code-salesforce-skills) plugin: `apex-fflib-layers` (layers, DI, Unit of Work), `apex-security` (user mode, sharing, least-privilege tests), `apex-testing` (behaviour names, Stub API, bulk and negative cases) and `apex-code-review` (run on every PR before it leaves draft). The workspace rules add: plan first, verify platform facts with a throwaway probe before relying on them, one scratch org per PR, and the owner approves every design call and merges every PR.
+- **One concrete example: the Claim Check's confused deputy (PR #6, ADR 0008).** The plan left one question open: how the processor would get access to a producer's file (a share, a link to the message, or a library). Before building, Claude Code wrote and ran a probe in a scratch org as the Automated Process user, the user that stores every event-borne message. It showed that this user reads _every_ `ContentVersion` in user mode, including files no one shared with it. So anyone allowed to publish an event could have had the processor read any file in the org and hand it to a handler. Claude Code stopped and put three options to the owner; the approved fix accepts a claim only when `ContentVersion.CreatedById` is the event's publisher (`PayloadClaim.problemFor`, commit `a642be5`).
+- **How it was reviewed:** the probe's raw output went into the handoff and ADR 0008 before any code. The owner chose the option. `apex-code-review` ran on the diff before the PR left draft. A mutation check removed the uploader check and five tests failed, including an end-to-end rejection through a real event delivery, which shows the tests guard it. CI then ran the whole suite in a fresh scratch org, and the owner merged in the GitHub UI.
+- **Every AI-assisted commit** carries a `Co-Authored-By: Claude` trailer and goes through a PR with the same gates as any other change.
 
 ## License
 
