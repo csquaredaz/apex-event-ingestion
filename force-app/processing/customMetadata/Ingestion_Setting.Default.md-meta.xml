@@ -38,4 +38,8 @@
         <field>Dispatch_Payload_Budget__c</field>
         <value xsi:type="xsd:double">4000000</value>
     </values>
+    <values>
+        <field>Stall_After_Minutes__c</field>
+        <value xsi:type="xsd:double">30</value>
+    </values>
 </CustomMetadata>
