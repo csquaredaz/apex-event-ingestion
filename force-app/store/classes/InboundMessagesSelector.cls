@@ -10,6 +10,12 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
   // The most messages one claim takes: a dispatch batch must stay bulk-safe at 200 (ADR 0004).
   private static final Integer MAX_CLAIM = 200;
 
+  private static final String DUE_SOQL =
+    'SELECT Id, Status__c, Next_Attempt_At__c, CreatedDate FROM Inbound_Message__c' +
+    ' WHERE (Status__c = :received AND CreatedDate <= :dueBy)' +
+    ' OR (Status__c = :failed AND Next_Attempt_At__c <= :dueBy)' +
+    ' ORDER BY Id LIMIT :maxRows';
+
   // True only for the duration of selectWithPayloadByIds, so the base class's query builder
   // includes the payload; every other query leaves it out.
   private Boolean includePayload = false;
@@ -110,6 +116,31 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
         'received' => MessageStatuses.RECEIVED,
         'failed' => MessageStatuses.FAILED,
         'now' => now,
+        'maxRows' => maxRows
+      },
+      AccessLevel.USER_MODE
+    );
+  }
+
+  /**
+   * @description See `IInboundMessagesSelector.selectDue`. Limits: 1 SOQL, at most 200 rows. The
+   * statement is written here rather than built from the standard field list, so the sweeper's
+   * permission set needs read access to only the fields it filters on.
+   * @param dueBy The latest time a message became due.
+   * @param maxRows The most rows to return, from 1 to 200.
+   * @return The due messages, with `Id`, `Status__c`, `Next_Attempt_At__c` and `CreatedDate`.
+   * @throws IllegalArgumentException If `dueBy` is null or `maxRows` is outside 1 to 200.
+   */
+  public List<Inbound_Message__c> selectDue(Datetime dueBy, Integer maxRows) {
+    if (dueBy == null || maxRows == null || maxRows < 1 || maxRows > MAX_CLAIM) {
+      throw new IllegalArgumentException('selectDue needs a time and 1 to ' + MAX_CLAIM + ' rows.');
+    }
+    return (List<Inbound_Message__c>) Database.queryWithBinds(
+      DUE_SOQL,
+      new Map<String, Object>{
+        'received' => MessageStatuses.RECEIVED,
+        'failed' => MessageStatuses.FAILED,
+        'dueBy' => dueBy,
         'maxRows' => maxRows
       },
       AccessLevel.USER_MODE
