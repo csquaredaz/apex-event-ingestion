@@ -22,8 +22,9 @@ flowchart LR
   job -.->|resolve claim| files
   job --> finalizer[MessageProcessorFinalizer]
   finalizer --> store
-  sweeper[StallSweeper] --> store
-  sweeper --> job
+  sweeper[StallSweeperSchedulable] -->|read due| store
+  sweeper -->|Processor_Wake_Event__e| wake[Wake trigger]
+  wake --> job
 ```
 
 ## Quick start
@@ -97,6 +98,12 @@ Then start processing. At most one processor job is queued at a time, so it's sa
 MessageProcessing.enqueue();
 ```
 
+Schedule the stall sweeper once per org. An unlocked package can't run a post-install script, so this is a setup step. It runs every 15 minutes as the user who schedules it (assign `Event_Ingestion_Sweeper` first), wakes processing for retries and lost runs, and sends a WARNING alert when a message has been due for more than 30 minutes:
+
+```bash
+npm run org:schedule-sweeper -- --target-org <alias>
+```
+
 Handle a message type with a bulk Command, then route it with a `Message_Route__mdt` row (`Message_Type__c = order.status_changed`, `Handler_Class__c = OrderStatusChangedHandler`):
 
 ```apex
@@ -124,6 +131,7 @@ public with sharing class OrderStatusChangedHandler implements IMessageHandler {
 | Recovery      | `MessageProcessorJob` claims a batch with a `FOR UPDATE` row lock, dispatches and records outcomes in one transaction; its Finalizer recovers a failed job's messages (`Failed` with exponential backoff, or `Dead`) and enqueues the next run; one duplicate signature keeps one job queued | A stored `Processing` status; two jobs per batch; chaining from `execute` | [0006](docs/adr/0006-queueable-finalizer-recovery.md)      |
 | Intake        | High-volume `Inbound_Message_Event__e` (Publish After Commit); the trigger takes up to 200 events or 3,000,000 payload characters per run with a resume checkpoint, retries every failure and alerts on the last retry; stored and processed by the Automated Process user                   | Direct store calls only; an Apex REST endpoint; giving up after 3 retries | [0007](docs/adr/0007-platform-event-intake.md)             |
 | Claim Check   | A payload over 131,072 characters travels as a `ContentVersion` Id in `Payload_Ref__c`; the store accepts it only from the user who uploaded that version, within 3,000,000 bytes; one processor job dispatches at most 4,000,000 payload characters and bytes                               | Trusting file visibility; a link to the message record; a library         | [0008](docs/adr/0008-claim-check.md)                       |
+| Stall sweep   | Four 15-minute schedules read due messages and publish `Processor_Wake_Event__e`, so the job runs as the Automated Process user; one WARNING per sweep for messages due over 30 minutes                                                                                                      | Enqueue as the scheduler with Modify All; system-mode status writes       | [0009](docs/adr/0009-stall-sweeper.md)                     |
 
 ## Testing
 

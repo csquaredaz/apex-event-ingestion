@@ -32,7 +32,7 @@ The object:
 - **`Payload_Size__c`**, set by the store from the inline payload or the claimed file, so the processor job can keep one job within the heap (ADR 0008; amended 2026-11-16).
 - **Lifecycle fields**, owned by the package: `Status__c`, `Attempts__c`, `Next_Attempt_At__c`, `Last_Error__c`, `Processed_At__c`. `MessageStore.append` never copies them from the caller, so a producer can't inject a message as already `Processed`. `Locked_Until__c` was removed with `Processing`: a processor job claims rows with a row lock instead (ADR 0006).
 - **Sharing:** OWD Private. Two permission sets:
-  - `Event_Ingestion_Processor`: create, read and edit, plus View All, for the user that runs ingestion. It has no Modify All, because Modify All also requires Delete, and the package never deletes messages. How the stall sweeper updates rows it doesn't own is decided in PR 7.
+  - `Event_Ingestion_Processor`: create, read and edit, plus View All, for the user that runs ingestion. It has no Modify All, because Modify All also requires Delete, and the package never deletes messages. The stall sweeper never updates rows: it publishes a wake event, and the job it starts runs as the Automated Process user (ADR 0009; amended 2026-11-16).
   - `Event_Ingestion_Viewer`: read only, plus View All, for operators.
 - **Access:** reads go through `InboundMessagesSelector` (apex-core-lib's `SObjectSelector`, user mode). The standard field list leaves out `Payload__c`, which can be up to 131,072 characters.
 
