@@ -25,6 +25,7 @@ private class IngestionSettingsTest {
     Assert.areEqual(3000000, settings.getIntakePayloadBudget(), 'Ingestion_Setting.Default payload budget');
     Assert.areEqual(3000000, settings.getClaimMaxBytes(), 'Ingestion_Setting.Default claim cap');
     Assert.areEqual(4000000, settings.getDispatchPayloadBudget(), 'Ingestion_Setting.Default dispatch budget');
+    Assert.areEqual(30, settings.getStallAfterMinutes(), 'Ingestion_Setting.Default stall threshold');
   }
 
   @IsTest
@@ -116,5 +117,16 @@ private class IngestionSettingsTest {
       blank.getDispatchPayloadBudget(),
       'Blank uses the default'
     );
+  }
+
+  @IsTest
+  static void current_stallThreshold_comesFromTheRowOrTheDefault() {
+    IngestionSettings.row = new Ingestion_Setting__mdt(Stall_After_Minutes__c = 90);
+    IngestionSettings fromRow = IngestionSettings.current();
+    IngestionSettings.row = new Ingestion_Setting__mdt(Stall_After_Minutes__c = 0);
+    IngestionSettings blank = IngestionSettings.current();
+
+    Assert.areEqual(90, fromRow.getStallAfterMinutes(), 'Stall threshold from the row');
+    Assert.areEqual(IngestionSettings.DEFAULT_STALL_AFTER_MINUTES, blank.getStallAfterMinutes(), 'Default');
   }
 }

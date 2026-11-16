@@ -14,6 +14,8 @@ public class EventIngestionTestFactory {
   public static final String PROCESSOR = 'Event_Ingestion_Processor';
   /** @description The read-only operator permission set. */
   public static final String VIEWER = 'Event_Ingestion_Viewer';
+  /** @description The permission set the stall sweeper's scheduling user needs. */
+  public static final String SWEEPER = 'Event_Ingestion_Sweeper';
 
   /**
    * @description An unsaved order-status message.
