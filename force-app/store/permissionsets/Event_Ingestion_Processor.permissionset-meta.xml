@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
     <description
-  >For the user that runs ingestion (the Automated Process user, or a dedicated integration user): store, claim and update messages. View All lets it see messages other users own.</description>
+  >For a dedicated ingestion user (PlatformEventSubscriberConfig, or an Apex producer that stores and processes its own messages): store, claim and update messages. The Automated Process user needs no permission set (ADR 0007).</description>
     <fieldPermissions>
         <editable>true</editable>
         <field>Inbound_Message__c.Payload__c</field>
