@@ -30,4 +30,12 @@
         <field>Intake_Payload_Budget__c</field>
         <value xsi:type="xsd:double">3000000</value>
     </values>
+    <values>
+        <field>Claim_Max_Bytes__c</field>
+        <value xsi:type="xsd:double">3000000</value>
+    </values>
+    <values>
+        <field>Dispatch_Payload_Budget__c</field>
+        <value xsi:type="xsd:double">4000000</value>
+    </values>
 </CustomMetadata>

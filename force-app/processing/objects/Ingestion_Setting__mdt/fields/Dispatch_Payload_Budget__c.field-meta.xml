@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Dispatch_Payload_Budget__c</fullName>
+    <description
+  >Payload characters and claimed bytes one processor job dispatches; it always takes at least one message, and leaves the rest for the next job. Default 4,000,000, which fits the 12 MB async heap (ADR 0008).</description>
+    <externalId>false</externalId>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Dispatch Payload Budget</label>
+    <precision>9</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <unique>false</unique>
+    <type>Number</type>
+</CustomField>
