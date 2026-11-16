@@ -115,7 +115,12 @@ private class IngestionEndToEndTest {
   static void publish_changeOlderThanTheOrder_leavesTheOrderAlone() {
     Order saved = OrderTestFactory.insertOrders('ORD', 1, null)[0];
     Datetime applied = Datetime.now().addMinutes(-1);
-    update new Order(Id = saved.Id, Fulfilment_Status__c = 'Delivered', Status_Changed_At__c = applied);
+    // Arrangement, not the code under test: system mode, because the admin running the tests may
+    // have no field access to the example's custom Order fields.
+    Database.update(
+      new Order(Id = saved.Id, Fulfilment_Status__c = 'Delivered', Status_Changed_At__c = applied),
+      AccessLevel.SYSTEM_MODE
+    );
 
     publishAndProcess(
       new List<Inbound_Message_Event__e>{
