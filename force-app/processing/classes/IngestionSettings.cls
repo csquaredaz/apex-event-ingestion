@@ -4,7 +4,8 @@
  * uses the code default; a batch size above 200 is capped at 200, so a dispatch batch stays
  * bulk-safe, and an intake batch size above 2,000 is capped at 2,000, the most a Platform Event
  * trigger receives. A claim larger than `Claim_Max_Bytes__c` is rejected by the store, and one job dispatches at most
- * `Dispatch_Payload_Budget__c` of payload (ADR 0008). `getInstance` reads the metadata
+ * `Dispatch_Payload_Budget__c` of payload (ADR 0008). The stall sweeper alerts on messages due for
+ * longer than `Stall_After_Minutes__c` (ADR 0009). `getInstance` reads the metadata
  * cache: no SOQL and no object permission, so the Automated Process user can read it. Immutable.
  * @group Processing
  */
@@ -28,6 +29,8 @@ public with sharing class IngestionSettings {
   public static final Integer DEFAULT_CLAIM_MAX_BYTES = 3000000;
   /** @description Payload characters and claimed bytes one processor job dispatches when the setting is blank. */
   public static final Integer DEFAULT_DISPATCH_PAYLOAD_BUDGET = 4000000;
+  /** @description Minutes a message may stay due before the stall sweeper alerts, when the setting is blank. */
+  public static final Integer DEFAULT_STALL_AFTER_MINUTES = 30;
 
   private static final Integer MAX_BATCH_SIZE = 200;
   private static final Integer MAX_INTAKE_BATCH_SIZE = 2000;
@@ -42,6 +45,7 @@ public with sharing class IngestionSettings {
   private final Integer intakePayloadBudget;
   private final Integer claimMaxBytes;
   private final Integer dispatchPayloadBudget;
+  private final Integer stallAfterMinutes;
 
   private IngestionSettings(Ingestion_Setting__mdt setting) {
     Ingestion_Setting__mdt values = setting == null ? new Ingestion_Setting__mdt() : setting;
@@ -55,6 +59,7 @@ public with sharing class IngestionSettings {
     intakePayloadBudget = valueOr(values.Intake_Payload_Budget__c, DEFAULT_INTAKE_PAYLOAD_BUDGET);
     claimMaxBytes = valueOr(values.Claim_Max_Bytes__c, DEFAULT_CLAIM_MAX_BYTES);
     dispatchPayloadBudget = valueOr(values.Dispatch_Payload_Budget__c, DEFAULT_DISPATCH_PAYLOAD_BUDGET);
+    stallAfterMinutes = valueOr(values.Stall_After_Minutes__c, DEFAULT_STALL_AFTER_MINUTES);
   }
 
   /**
@@ -107,6 +112,15 @@ public with sharing class IngestionSettings {
    */
   public Integer getDispatchPayloadBudget() {
     return dispatchPayloadBudget;
+  }
+
+  /**
+   * @description How long a message may stay due before the stall sweeper alerts on it (ADR 0009).
+   * Keep it above the 15-minute sweep interval, or every retry the sweeper wakes is reported.
+   * @return Minutes, at least 1.
+   */
+  public Integer getStallAfterMinutes() {
+    return stallAfterMinutes;
   }
 
   /** A blank or non-positive field uses the default. */

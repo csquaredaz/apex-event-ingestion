@@ -166,4 +166,76 @@ private class InboundMessagesSelectorTest {
     Assert.areEqual(4, rejected, 'Out-of-range limits and a null time are rejected');
     Assert.areEqual(0, Limits.getQueries(), 'No SOQL spent');
   }
+
+  @IsTest
+  static void selectDue_mixedStatusesAndAges_returnsWhatWasDueByTheTime() {
+    User processor = EventIngestionTestFactory.minimumAccessUser(EventIngestionTestFactory.PROCESSOR);
+    Datetime now = Datetime.now();
+    List<Inbound_Message__c> rows = new List<Inbound_Message__c>{
+      row('RECEIVED-OLD'),
+      row('RECEIVED-NEW'),
+      row('FAILED-OVERDUE'),
+      row('FAILED-RECENT'),
+      row('FAILED-LATER'),
+      row('PROCESSED-OLD')
+    };
+    rows[2].Status__c = MessageStatuses.FAILED;
+    rows[2].Next_Attempt_At__c = now.addMinutes(-40);
+    rows[3].Status__c = MessageStatuses.FAILED;
+    rows[3].Next_Attempt_At__c = now.addMinutes(-5);
+    rows[4].Status__c = MessageStatuses.FAILED;
+    rows[4].Next_Attempt_At__c = now.addMinutes(5);
+    rows[5].Status__c = MessageStatuses.PROCESSED;
+    insert as system rows;
+    Test.setCreatedDate(rows[0].Id, now.addMinutes(-40));
+    Test.setCreatedDate(rows[5].Id, now.addMinutes(-40));
+
+    System.runAs(processor) {
+      InboundMessagesSelector selector = new InboundMessagesSelector();
+      Test.startTest();
+      Set<Id> dueBefore = new Map<Id, Inbound_Message__c>(selector.selectDue(now.addMinutes(-30), 200)).keySet();
+      Set<Id> dueNow = new Map<Id, Inbound_Message__c>(selector.selectDue(now, 200)).keySet();
+      List<Inbound_Message__c> limited = selector.selectDue(now, 1);
+      Test.stopTest();
+
+      Assert.areEqual(new Set<Id>{ rows[0].Id, rows[2].Id }, dueBefore, 'Due for over 30 minutes');
+      Assert.areEqual(new Set<Id>{ rows[0].Id, rows[1].Id, rows[2].Id, rows[3].Id }, dueNow, 'Due now');
+      Assert.areEqual(1, limited.size(), 'The limit is bound');
+    }
+  }
+
+  @IsTest
+  static void selectDue_sweeperPermissionSet_readsOnlyTheFieldsItNeeds() {
+    User sweeper = EventIngestionTestFactory.minimumAccessUser(EventIngestionTestFactory.SWEEPER);
+    Inbound_Message__c message = row('RECEIVED');
+    insert as system message;
+
+    System.runAs(sweeper) {
+      List<Inbound_Message__c> due = new InboundMessagesSelector().selectDue(Datetime.now().addMinutes(1), 10);
+
+      Assert.areEqual(1, due.size(), 'View All shows a message another user owns');
+      Assert.areEqual(MessageStatuses.RECEIVED, due[0].Status__c, 'Status is readable');
+      Assert.isNotNull(due[0].CreatedDate, 'CreatedDate is selected');
+    }
+  }
+
+  @IsTest
+  static void selectDue_invalidArguments_throwsIllegalArgumentException() {
+    InboundMessagesSelector selector = new InboundMessagesSelector();
+    Integer rejected = 0;
+    for (Integer maxRows : new List<Integer>{ 0, 201, null }) {
+      try {
+        selector.selectDue(Datetime.now(), maxRows);
+      } catch (IllegalArgumentException e) {
+        rejected++;
+      }
+    }
+    try {
+      selector.selectDue(null, 10);
+    } catch (IllegalArgumentException e) {
+      rejected++;
+    }
+    Assert.areEqual(4, rejected, 'Out-of-range limits and a null time are rejected');
+    Assert.areEqual(0, Limits.getQueries(), 'No SOQL spent');
+  }
 }

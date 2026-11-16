@@ -33,4 +33,16 @@ public interface IInboundMessagesSelector extends ISelector {
    * ("Record Currently Unavailable"), or the running user can't read the fields (user mode).
    */
   List<Inbound_Message__c> selectClaimable(Datetime now, Integer maxRows);
+
+  /**
+   * @description Selects messages that have been due since `dueBy` or earlier, without locking them,
+   * for the stall sweeper (ADR 0009): `Received` and created at or before `dueBy`, or `Failed` with
+   * `Next_Attempt_At__c` at or before `dueBy`. Only `Id`, `Status__c`, `Next_Attempt_At__c` and
+   * `CreatedDate` are selected, so a sweeper needs read access to those fields alone.
+   * @param dueBy The latest time a message became due.
+   * @param maxRows The most rows to return, from 1 to 200.
+   * @return The messages the running user can see, in user mode, in Id order.
+   * @throws QueryException If the running user can't read the object or those fields (user mode).
+   */
+  List<Inbound_Message__c> selectDue(Datetime dueBy, Integer maxRows);
 }
