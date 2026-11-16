@@ -56,6 +56,34 @@ The Automated Process user stores and processes every message, with no permissio
 
 Then try it: publish the event in [Usage](#usage) for an order whose `OrderReferenceNumber` is `ORD-1042`, and within seconds the order's `Fulfilment_Status__c` reads `Shipped` and a `Shipment__c` exists.
 
+### Install the package in your org
+
+Latest release: [`v1.0.0`](https://github.com/csquaredaz/apex-event-ingestion/releases/tag/v1.0.0), package version `1.0.0-1`. Install apex-core-lib first:
+
+```bash
+sf package install --package 04tak000000u3MbAAI --target-org <alias> --wait 20 --no-prompt   # apex-core-lib 1.1.0-1
+sf package install --package 04tak000000utQ1AAI --target-org <alias> --wait 20 --no-prompt   # apex-event-ingestion 1.0.0-1
+```
+
+Both are unlocked packages with no namespace, and both install in any org, including production. Then assign the permission sets and schedule the sweeper (the two steps above), and add your own handlers and `Message_Route__mdt` rows ([Handling a message type](#handling-a-message-type)). To try the sample handlers in a sandbox or scratch org, deploy `example/` from a clone and assign its permission set:
+
+```bash
+sf project deploy start --source-dir example --target-org <alias> --wait 20
+sf org assign permset --name Event_Ingestion_Example --target-org <alias>
+```
+
+`example/` is sample code, not part of the package: it adds a `Shipment__c` object and two fields to `Order`. As a dependency in another project's `sfdx-project.json`:
+
+```json
+"dependencies": [{ "package": "apex-core-lib@1.1.0-1" }, { "package": "apex-event-ingestion@1.0.0-1" }],
+"packageAliases": {
+  "apex-core-lib@1.1.0-1": "04tak000000u3MbAAI",
+  "apex-event-ingestion@1.0.0-1": "04tak000000utQ1AAI"
+}
+```
+
+The release was smoke-tested by installing both versions in a fresh scratch org, running all of this repo's tests against the installed package (238 passing), and publishing a live event through to the example handlers. `org:setup` stays a source deploy, because contributors test their own unreleased changes.
+
 ## Usage
 
 Producers publish an event (the running user needs the `Event_Ingestion_Publisher` permission set). The intake trigger stores each message once, as the Automated Process user, and starts processing:
@@ -178,7 +206,7 @@ protected override List<HandlerResult> apply(List<OrderStatusChange> changes, Ma
 | End to end                  | `IngestionEndToEndTest`: publish → store → Composite dispatch → `Order` and `Shipment__c` written, with nothing mocked: bulk, redelivery, stale, unknown-order and worst-result-wins cases       | `npm run org:test` |
 | Static analysis             | Zero High or Critical Code Analyzer findings (CI gate); this repo also keeps zero Moderate                                                                                                       | `npm run analyze`  |
 
-`org:test` runs only this repo's `*Test` classes (`--class-names`), because `RunLocalTests` would also run apex-core-lib's packaged tests (ADR 0001). CI does the same in a fresh scratch org on every non-draft PR and fails unless every test passes and coverage of this repo's own classes, the package's and `example/`'s, is at least 90%; it's 100%. Tests cover what coverage can't: a Finalizer that can't be forced to fail in a test is driven with a fake context, the Automated Process user's access is exercised through real deliveries, and a mutation check per feature (the payload truncation, the uploader check, the wake call, the stale guard) confirmed the tests fail when the behaviour goes. There's no LWC, so `npm run test:unit` has nothing to run.
+`org:test` runs only this repo's `*Test` classes (`--class-names`), because `RunLocalTests` would also run apex-core-lib's packaged tests (ADR 0001). CI does the same in a fresh scratch org on every non-draft PR, with none of this repo's permission sets assigned to the running user (as in the org where `sf package version create` runs the package's tests), and fails unless every test passes and coverage of this repo's own classes, the package's and `example/`'s, is at least 90%; it's 100%. Tests cover what coverage can't: a Finalizer that can't be forced to fail in a test is driven with a fake context, the Automated Process user's access is exercised through real deliveries, and a mutation check per feature (the payload truncation, the uploader check, the wake call, the stale guard) confirmed the tests fail when the behaviour goes. There's no LWC, so `npm run test:unit` has nothing to run.
 
 Deliberately left out, because this repo is free only: coverage SaaS (the badge is a shields.io endpoint on the `badges` branch), paid scanners and any CI step that calls a model.
 

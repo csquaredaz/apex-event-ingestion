@@ -23,6 +23,8 @@
   "sfdcLoginUrl": "https://login.salesforce.com",
   "sourceApiVersion": "68.0",
   "packageAliases": {
-    "apex-core-lib@1.1.0-1": "04tak000000u3MbAAI"
+    "apex-core-lib@1.1.0-1": "04tak000000u3MbAAI",
+    "apex-event-ingestion": "0Hoak0000007g7NCAQ",
+    "apex-event-ingestion@1.0.0-1": "04tak000000utQ1AAI"
   }
 }
