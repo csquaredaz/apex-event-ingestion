@@ -7,6 +7,9 @@
  * @group Public API
  */
 public inherited sharing class InboundMessagesSelector extends SObjectSelector implements IInboundMessagesSelector {
+  // The most messages one claim takes: a dispatch batch must stay bulk-safe at 200 (ADR 0004).
+  private static final Integer MAX_CLAIM = 200;
+
   // True only for the duration of selectWithPayloadByIds, so the base class's query builder
   // includes the payload; every other query leaves it out.
   private Boolean includePayload = false;
@@ -33,7 +36,6 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
       Inbound_Message__c.Status__c,
       Inbound_Message__c.Attempts__c,
       Inbound_Message__c.Next_Attempt_At__c,
-      Inbound_Message__c.Locked_Until__c,
       Inbound_Message__c.Correlation_Id__c,
       Inbound_Message__c.Occurred_At__c,
       Inbound_Message__c.Processed_At__c
@@ -84,5 +86,41 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
     } finally {
       includePayload = false;
     }
+  }
+
+  /**
+   * @description See `IInboundMessagesSelector.selectClaimable`. Limits: 1 SOQL. The base class's
+   * `query` always appends `ORDER BY`, which the platform rejects with `FOR UPDATE` ("Explicit
+   * ORDER BY not allowed when locking rows"). This method builds the same statement, swaps the
+   * ordering for a bound `LIMIT` and `FOR UPDATE`, and runs it in user mode with binds only.
+   * @param now The time a `Failed` message must be due by.
+   * @param maxRows The most rows to claim, from 1 to 200.
+   * @return The claimed messages.
+   * @throws IllegalArgumentException If `now` is null or `maxRows` is outside 1 to 200.
+   */
+  public List<Inbound_Message__c> selectClaimable(Datetime now, Integer maxRows) {
+    if (now == null || maxRows == null || maxRows < 1 || maxRows > MAX_CLAIM) {
+      throw new IllegalArgumentException('selectClaimable needs a time and 1 to ' + MAX_CLAIM + ' rows.');
+    }
+    return (List<Inbound_Message__c>) Database.queryWithBinds(
+      buildClaimSoql(),
+      new Map<String, Object>{
+        'received' => MessageStatuses.RECEIVED,
+        'failed' => MessageStatuses.FAILED,
+        'now' => now,
+        'maxRows' => maxRows
+      },
+      AccessLevel.USER_MODE
+    );
+  }
+
+  /**
+   * @description The claim statement, visible to tests so its shape can be asserted.
+   * @return SOQL with the standard fields, the due filter, a bound limit and `FOR UPDATE`.
+   */
+  @TestVisible
+  private String buildClaimSoql() {
+    String soql = buildSoql('Status__c = :received OR (Status__c = :failed AND Next_Attempt_At__c <= :now)');
+    return soql.substringBeforeLast(' ORDER BY ') + ' LIMIT :maxRows FOR UPDATE';
   }
 }

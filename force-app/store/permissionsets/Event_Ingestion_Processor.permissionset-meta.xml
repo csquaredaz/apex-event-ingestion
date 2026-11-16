@@ -24,11 +24,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Inbound_Message__c.Locked_Until__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Inbound_Message__c.Last_Error__c</field>
         <readable>true</readable>
     </fieldPermissions>

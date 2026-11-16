@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Status__c</fullName>
-    <description
-  >Lifecycle: Received, Processing, Processed, Failed (will retry) or Dead (out of attempts).</description>
+    <description>Lifecycle: Received, Processed, Failed (will retry) or Dead (out of attempts).</description>
     <label>Status</label>
     <required>false</required>
     <valueSet>
@@ -10,7 +9,6 @@
         <valueSetDefinition>
             <sorted>false</sorted>
             <value><fullName>Received</fullName><default>true</default><label>Received</label></value>
-            <value><fullName>Processing</fullName><default>false</default><label>Processing</label></value>
             <value><fullName>Processed</fullName><default>false</default><label>Processed</label></value>
             <value><fullName>Failed</fullName><default>false</default><label>Failed</label></value>
             <value><fullName>Dead</fullName><default>false</default><label>Dead</label></value>
