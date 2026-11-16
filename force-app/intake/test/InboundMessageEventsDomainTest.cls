@@ -208,4 +208,23 @@ private class InboundMessageEventsDomainTest {
       'Owns the intake event'
     );
   }
+
+  @IsTest
+  static void onAfterInsert_claimedEvent_passesTheClaimAndEachPublisherToTheStore() {
+    useMocks(new Mocks().stubReturn('append', accepted(2)));
+    List<Inbound_Message_Event__e> events = EventIngestionTestFactory.deliveredEvents(2);
+    String ref = FakeId.generate(ContentVersion.SObjectType);
+    events[1].Payload__c = null;
+    events[1].Payload_Ref__c = ref;
+
+    new InboundMessageEventsDomain(events).onAfterInsert();
+
+    Assert.areEqual(ref, appended()[1].Payload_Ref__c, 'The claim is copied');
+    Assert.isNull(appended()[0].Payload_Ref__c, 'An inline event has none');
+    Assert.areEqual(
+      new List<Id>{ UserInfo.getUserId(), UserInfo.getUserId() },
+      storeMock.argumentsOf('append', 0)[1],
+      'Each event\'s publisher, so the store checks the claim against it, not the Automated Process user'
+    );
+  }
 }

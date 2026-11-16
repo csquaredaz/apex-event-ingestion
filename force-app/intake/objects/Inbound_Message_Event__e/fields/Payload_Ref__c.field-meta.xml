@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Payload_Ref__c</fullName>
+    <description
+  >The claim check: the Id of a ContentVersion the publisher uploaded, for a payload over Payload__c's limit (ADR 0008). Set instead of Payload__c, never with it.</description>
+    <externalId>false</externalId>
+    <label>Payload Ref</label>
+    <length>18</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>
