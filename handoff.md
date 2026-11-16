@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-16 (PR 5 in review)
+Last updated: 2026-11-16 (after PR 5)
 
 ## Done
 
@@ -26,7 +26,7 @@ Last updated: 2026-11-16 (PR 5 in review)
   - Added during the build, outside the approved signatures: `IProcessorQueue`/`ProcessorQueue` (`DI_Binding.Processor_Queue`), because a test context refuses any job enqueued from a successful job's Finalizer; and `MessageProcessorFinalizer.claimed(Set<Id>, Integer)`/`completed(Datetime)`, which the job calls.
   - Local run in `aei-dev`: 124 tests from C's 20 test classes, 100% of C's 585 lines (21 classes); Code Analyzer 0 High, 0 Moderate. A mutation check (truncation removed) made `MessageLifecycleTest` fail.
 
-- **PR 5 `feat/event-intake` (in review, 2026-11-16).** API approved 2026-11-16 with all five design calls: `Inbound_Message_Event__e` (high volume, Publish After Commit), `InboundMessageEventTrigger` → `TriggerDispatcher` → `InboundMessageEventsDomain` (`DI_Binding.Inbound_Message_Events_Domain`), `IngestionSettings.getIntakeBatchSize()`/`getIntakePayloadBudget()` (`Intake_Batch_Size__c` 200, `Intake_Payload_Budget__c` 3,000,000), `Event_Ingestion_Publisher`. ADR 0007.
+- **PR 5 `feat/event-intake` merged 2026-11-16 as `38287db` (PR #5).** The ready run, 43916635991, used one CI org: 138 tests from C's 22 test classes, package coverage 100%. The `main` run, 43917675184, reused that result (scratch-org job skipped) and published the badge. API approved 2026-11-16 with all five design calls: `Inbound_Message_Event__e` (high volume, Publish After Commit), `InboundMessageEventTrigger` → `TriggerDispatcher` → `InboundMessageEventsDomain` (`DI_Binding.Inbound_Message_Events_Domain`), `IngestionSettings.getIntakeBatchSize()`/`getIntakePayloadBudget()` (`Intake_Batch_Size__c` 200, `Intake_Payload_Budget__c` 3,000,000), `Event_Ingestion_Publisher`. ADR 0007.
   - Chad's calls: (1) no Automated Process assignment script, because probe 2 showed that user needs no permission set; (2) retry every failure through the platform's 9 retries, CRITICAL alert on the last, then the trigger suspends; (3) count + payload budget per run with a resume checkpoint; (4) rejections logged by key only; (5) Publish After Commit.
   - Changed during the build: the event is `Inbound_Message_Event__e`, because the platform rejects `Inbound_Message__e` next to `Inbound_Message__c` ("That object name is already in use").
   - Local run in `aei-dev`: 138 tests from C's 22 test classes, all passing; `InboundMessageEventsDomain` and the trigger 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (checkpoint removed) made the integration test fail (2 stored, not 3).
@@ -86,8 +86,8 @@ Last updated: 2026-11-16 (PR 5 in review)
 
 ## Notes for the next session
 
-- **Now: PR 5 `feat/event-intake` in review.** After it merges, PR 6 `feat/claim-check` starts with probe 7 (can the Automated Process user read another user's `ContentVersion`? Given probe 2, likely yes, but prove it).
-- Dev Hub on 2026-11-16, after PR 4: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 6/6 daily scratch orgs, 6/6 package creates.
-- `aei-dev` (expires around 2026-12-13) is in sync with `main` at `ffae240`: the store, dispatch and processing are deployed, `Locked_Until__c` is deleted, and Processor is assigned to the default user.
+- **Next: PR 6 `feat/claim-check`.** This branch was cut from `main` at `38287db`, and its first commit is this handoff. PR 6 `feat/claim-check` starts with probe 7 (can the Automated Process user read another user's `ContentVersion`? Given probe 2, likely yes, but prove it).
+- Dev Hub on 2026-11-16, after PR 5: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs.
+- `aei-dev` (expires around 2026-12-13) is in sync with `main` at `38287db`: store, dispatch, processing and intake are deployed, and every permission set is assigned to the default user. The Automated Process user has no permission set, on purpose (ADR 0007).
 - To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
