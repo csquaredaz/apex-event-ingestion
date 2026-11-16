@@ -8,7 +8,8 @@
 public with sharing class MessageDispatcher implements IMessageDispatcher {
   /**
    * @description See `IMessageDispatcher.dispatch`. Limits: 1 SOQL (selector, user mode, with
-   * payload); one handler call per route per message type; bulk-safe at 200.
+   * payload), plus 1 through `IPayloadResolver` when any message is claimed; one handler call per
+   * route per message type; bulk-safe at 200.
    * @param messageIds The messages to dispatch.
    * @return One result per message found, keyed by message Id.
    */
@@ -20,13 +21,8 @@ public with sharing class MessageDispatcher implements IMessageDispatcher {
     IInboundMessagesSelector selector = (IInboundMessagesSelector) Application.Selector.newInstance(
       Inbound_Message__c.SObjectType
     );
-    Map<String, List<InboundMessage>> messagesByType = new Map<String, List<InboundMessage>>();
-    for (Inbound_Message__c row : selector.selectWithPayloadByIds(messageIds)) {
-      if (!messagesByType.containsKey(row.Message_Type__c)) {
-        messagesByType.put(row.Message_Type__c, new List<InboundMessage>());
-      }
-      messagesByType.get(row.Message_Type__c).add(InboundMessage.fromRecord(row));
-    }
+    List<Inbound_Message__c> rows = selector.selectWithPayloadByIds(messageIds);
+    Map<String, List<InboundMessage>> messagesByType = group(rows, resolveClaims(rows), resultsById);
     if (messagesByType.isEmpty()) {
       return resultsById;
     }
@@ -42,6 +38,54 @@ public with sharing class MessageDispatcher implements IMessageDispatcher {
       collect(messages, results, resultsById);
     }
     return resultsById;
+  }
+
+  /** Loads every claimed payload in one call; none when no message is claimed (ADR 0008). */
+  private static Map<String, String> resolveClaims(List<Inbound_Message__c> rows) {
+    Set<String> refs = new Set<String>();
+    for (Inbound_Message__c row : rows) {
+      if (String.isNotBlank(row.Payload_Ref__c)) {
+        refs.add(row.Payload_Ref__c);
+      }
+    }
+    if (refs.isEmpty()) {
+      return new Map<String, String>();
+    }
+    return ((IPayloadResolver) Application.Service.newInstance(IPayloadResolver.class)).resolve(refs);
+  }
+
+  /**
+   * Groups the messages by type with their payloads. A claim that can't be loaded can't heal by
+   * retrying, so that message is FATAL here and never reaches a handler; an operator replays it
+   * from Dead.
+   */
+  private static Map<String, List<InboundMessage>> group(
+    List<Inbound_Message__c> rows,
+    Map<String, String> claimedPayloads,
+    Map<Id, HandlerResult> resultsById
+  ) {
+    Map<String, List<InboundMessage>> messagesByType = new Map<String, List<InboundMessage>>();
+    for (Inbound_Message__c row : rows) {
+      Boolean claimed = String.isNotBlank(row.Payload_Ref__c);
+      if (claimed && !claimedPayloads.containsKey(row.Payload_Ref__c)) {
+        resultsById.put(
+          row.Id,
+          HandlerResult.fatal(
+            row.Id,
+            'The claimed payload ' +
+              row.Payload_Ref__c +
+              ' could not be loaded: the ContentVersion is missing, not visible or not UTF-8 text.'
+          )
+        );
+        continue;
+      }
+      if (!messagesByType.containsKey(row.Message_Type__c)) {
+        messagesByType.put(row.Message_Type__c, new List<InboundMessage>());
+      }
+      messagesByType.get(row.Message_Type__c)
+        .add(InboundMessage.fromRecord(row, claimed ? claimedPayloads.get(row.Payload_Ref__c) : row.Payload__c));
+    }
+    return messagesByType;
   }
 
   /** No route means nobody handles the type: the message goes to Dead and can be replayed. */

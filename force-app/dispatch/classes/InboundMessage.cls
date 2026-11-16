@@ -11,17 +11,19 @@ public with sharing class InboundMessage {
   private final String externalMessageId;
   private final String messageType;
   private final String payload;
+  private final String payloadRef;
   private final String correlationId;
   private final Datetime occurredAt;
   private final Integer attempt;
 
-  private InboundMessage(Inbound_Message__c row) {
+  private InboundMessage(Inbound_Message__c row, String payload) {
     messageId = row.Id;
     idempotencyKey = row.Idempotency_Key__c;
     source = row.Source__c;
     externalMessageId = row.External_Message_Id__c;
     messageType = row.Message_Type__c;
-    payload = row.Payload__c;
+    this.payload = payload;
+    payloadRef = row.Payload_Ref__c;
     correlationId = row.Correlation_Id__c;
     occurredAt = row.Occurred_At__c;
     attempt = (row.Attempts__c == null ? 0 : row.Attempts__c.intValue()) + 1;
@@ -35,10 +37,22 @@ public with sharing class InboundMessage {
    * @throws IllegalArgumentException If the row is null.
    */
   public static InboundMessage fromRecord(Inbound_Message__c row) {
+    return fromRecord(row, row?.Payload__c);
+  }
+
+  /**
+   * @description Builds the view of a stored row with a payload loaded from elsewhere: dispatch
+   * passes a claimed payload's text here (ADR 0008).
+   * @param row The row.
+   * @param resolvedPayload The payload text the handler sees, in place of `Payload__c`.
+   * @return The message.
+   * @throws IllegalArgumentException If the row is null.
+   */
+  public static InboundMessage fromRecord(Inbound_Message__c row, String resolvedPayload) {
     if (row == null) {
       throw new IllegalArgumentException('An InboundMessage needs an Inbound_Message__c row.');
     }
-    return new InboundMessage(row);
+    return new InboundMessage(row, resolvedPayload);
   }
 
   /** @description @return The stored row's Id; every result for this message carries it. */
@@ -66,9 +80,18 @@ public with sharing class InboundMessage {
     return messageType;
   }
 
-  /** @description @return The payload as the producer sent it, usually JSON; may be null. */
+  /**
+   * @description The payload as the producer sent it, usually JSON: inline, or the claimed file's
+   * text, which dispatch loads before the handler runs (ADR 0008).
+   * @return The payload; may be null.
+   */
   public String getPayload() {
     return payload;
+  }
+
+  /** @description @return The claimed `ContentVersion` Id when the payload came by claim check, else null. */
+  public String getPayloadRef() {
+    return payloadRef;
   }
 
   /** @description @return The producer's correlation Id, for logs; may be null. */
