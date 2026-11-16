@@ -23,6 +23,8 @@ private class IngestionSettingsTest {
     Assert.areEqual(NOW.addMinutes(60), settings.getRetrySchedule().nextAttemptAt(10, NOW), 'Capped at 60');
     Assert.areEqual(200, settings.getIntakeBatchSize(), 'Ingestion_Setting.Default intake batch');
     Assert.areEqual(3000000, settings.getIntakePayloadBudget(), 'Ingestion_Setting.Default payload budget');
+    Assert.areEqual(3000000, settings.getClaimMaxBytes(), 'Ingestion_Setting.Default claim cap');
+    Assert.areEqual(4000000, settings.getDispatchPayloadBudget(), 'Ingestion_Setting.Default dispatch budget');
   }
 
   @IsTest
@@ -92,6 +94,27 @@ private class IngestionSettingsTest {
       IngestionSettings.DEFAULT_INTAKE_PAYLOAD_BUDGET,
       capped.getIntakePayloadBudget(),
       'Zero means default'
+    );
+  }
+
+  @IsTest
+  static void current_claimSettings_comeFromTheRowOrTheDefaults() {
+    IngestionSettings.row = new Ingestion_Setting__mdt(Claim_Max_Bytes__c = 1000, Dispatch_Payload_Budget__c = 5000);
+    IngestionSettings fromRow = IngestionSettings.current();
+    IngestionSettings.row = new Ingestion_Setting__mdt(Claim_Max_Bytes__c = 0);
+    IngestionSettings blank = IngestionSettings.current();
+
+    Assert.areEqual(1000, fromRow.getClaimMaxBytes(), 'Claim cap from the row');
+    Assert.areEqual(5000, fromRow.getDispatchPayloadBudget(), 'Dispatch budget from the row');
+    Assert.areEqual(
+      IngestionSettings.DEFAULT_CLAIM_MAX_BYTES,
+      blank.getClaimMaxBytes(),
+      'Non-positive uses the default'
+    );
+    Assert.areEqual(
+      IngestionSettings.DEFAULT_DISPATCH_PAYLOAD_BUDGET,
+      blank.getDispatchPayloadBudget(),
+      'Blank uses the default'
     );
   }
 }

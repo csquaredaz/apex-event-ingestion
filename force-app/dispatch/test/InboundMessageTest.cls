@@ -1,7 +1,7 @@
 /**
  * @description Tests for `InboundMessage`, all in memory.
  *
- * Subject:  InboundMessage.fromRecord, getAttempt, isOlderThan
+ * Subject:  InboundMessage.fromRecord (inline and resolved payloads), getAttempt, isOlderThan
  * Mocks:    none
  * Bulk:     not applicable (a value object)
  * Negative: a null row; unknown times on either side of the stale guard
@@ -74,5 +74,31 @@ private class InboundMessageTest {
     row.Occurred_At__c = null;
 
     Assert.isFalse(InboundMessage.fromRecord(row).isOlderThan(Datetime.now()), 'Unknown time proves nothing');
+  }
+
+  @IsTest
+  static void fromRecord_resolvedPayload_replacesTheInlineOneAndKeepsTheClaim() {
+    Inbound_Message__c row = EventIngestionTestFactory.message('erp', 'ORD-1');
+    row.Payload__c = null;
+    row.Payload_Ref__c = FakeId.generate(ContentVersion.SObjectType);
+
+    InboundMessage message = InboundMessage.fromRecord(row, '{"from":"file"}');
+
+    Assert.areEqual('{"from":"file"}', message.getPayload(), 'The resolved text');
+    Assert.areEqual(row.Payload_Ref__c, message.getPayloadRef(), 'The claim');
+    Assert.isNull(
+      InboundMessage.fromRecord(EventIngestionTestFactory.message('erp', 'ORD-2')).getPayloadRef(),
+      'Inline: no claim'
+    );
+  }
+
+  @IsTest
+  static void fromRecord_nullRowWithPayload_throws() {
+    try {
+      InboundMessage.fromRecord(null, '{}');
+      Assert.fail('Expected IllegalArgumentException');
+    } catch (IllegalArgumentException e) {
+      Assert.isTrue(e.getMessage().contains('Inbound_Message__c'), e.getMessage());
+    }
   }
 }

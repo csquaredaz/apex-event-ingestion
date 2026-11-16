@@ -3,7 +3,8 @@
  * `Ingestion_Setting__mdt` row named `Default` (ADR 0006, 0007). A missing row or a blank field
  * uses the code default; a batch size above 200 is capped at 200, so a dispatch batch stays
  * bulk-safe, and an intake batch size above 2,000 is capped at 2,000, the most a Platform Event
- * trigger receives. `getInstance` reads the metadata
+ * trigger receives. A claim larger than `Claim_Max_Bytes__c` is rejected by the store, and one job dispatches at most
+ * `Dispatch_Payload_Budget__c` of payload (ADR 0008). `getInstance` reads the metadata
  * cache: no SOQL and no object permission, so the Automated Process user can read it. Immutable.
  * @group Processing
  */
@@ -23,6 +24,10 @@ public with sharing class IngestionSettings {
   public static final Integer DEFAULT_INTAKE_BATCH_SIZE = 200;
   /** @description Payload characters one intake trigger run takes when the setting is blank. */
   public static final Integer DEFAULT_INTAKE_PAYLOAD_BUDGET = 3000000;
+  /** @description The largest claimed file, in bytes, the store accepts when the setting is blank. */
+  public static final Integer DEFAULT_CLAIM_MAX_BYTES = 3000000;
+  /** @description Payload characters and claimed bytes one processor job dispatches when the setting is blank. */
+  public static final Integer DEFAULT_DISPATCH_PAYLOAD_BUDGET = 4000000;
 
   private static final Integer MAX_BATCH_SIZE = 200;
   private static final Integer MAX_INTAKE_BATCH_SIZE = 2000;
@@ -35,6 +40,8 @@ public with sharing class IngestionSettings {
   private final RetrySchedule retrySchedule;
   private final Integer intakeBatchSize;
   private final Integer intakePayloadBudget;
+  private final Integer claimMaxBytes;
+  private final Integer dispatchPayloadBudget;
 
   private IngestionSettings(Ingestion_Setting__mdt setting) {
     Ingestion_Setting__mdt values = setting == null ? new Ingestion_Setting__mdt() : setting;
@@ -46,6 +53,8 @@ public with sharing class IngestionSettings {
     );
     intakeBatchSize = Math.min(valueOr(values.Intake_Batch_Size__c, DEFAULT_INTAKE_BATCH_SIZE), MAX_INTAKE_BATCH_SIZE);
     intakePayloadBudget = valueOr(values.Intake_Payload_Budget__c, DEFAULT_INTAKE_PAYLOAD_BUDGET);
+    claimMaxBytes = valueOr(values.Claim_Max_Bytes__c, DEFAULT_CLAIM_MAX_BYTES);
+    dispatchPayloadBudget = valueOr(values.Dispatch_Payload_Budget__c, DEFAULT_DISPATCH_PAYLOAD_BUDGET);
   }
 
   /**
@@ -80,6 +89,24 @@ public with sharing class IngestionSettings {
    */
   public Integer getIntakePayloadBudget() {
     return intakePayloadBudget;
+  }
+
+  /**
+   * @description The largest claimed file the store accepts (ADR 0008). Loading a file costs about
+   * twice its size in heap while it is converted to text, so keep it well under the 12 MB async heap.
+   * @return Bytes, at least 1.
+   */
+  public Integer getClaimMaxBytes() {
+    return claimMaxBytes;
+  }
+
+  /**
+   * @description Inline payload characters plus claimed bytes one processor job dispatches (ADR 0008).
+   * The first claimed message is always taken, however large, so one big payload can't stall processing.
+   * @return The budget, at least 1.
+   */
+  public Integer getDispatchPayloadBudget() {
+    return dispatchPayloadBudget;
   }
 
   /** A blank or non-positive field uses the default. */

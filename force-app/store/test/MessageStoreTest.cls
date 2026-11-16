@@ -1,16 +1,19 @@
 /**
- * @description Unit tests for `MessageStore`, with Stub API mocks for `IPartialDml` and
- * `IInboundMessagesSelector`, so no row is written.
+ * @description Unit tests for `MessageStore`, with Stub API mocks for `IPartialDml`,
+ * `IInboundMessagesSelector` and `IPayloadResolver`, so no row is written.
  *
  * Subject:  MessageStore.append
- * Mocks:    IPartialDml (fake SaveResults), IInboundMessagesSelector
- * Bulk:     200 messages → 1 insert call, 200 results in input order, no query
- * Negative: null/empty input, missing key parts, DUPLICATE_VALUE, other DML errors, invisible stored row
+ * Mocks:    IPartialDml (fake SaveResults), IInboundMessagesSelector, IPayloadResolver (claims)
+ * Bulk:     200 messages → 1 insert call, 200 results in input order, no query; 200 claims → 1 inspect
+ * Negative: null/empty input, missing key parts, DUPLICATE_VALUE, other DML errors, invisible stored row,
+ *           an inline payload and a claim together, a claim on another producer's file, an unusable
+ *           claim, a producer list of the wrong size
  */
 @IsTest
 private class MessageStoreTest {
   private static Mocks dmlMock;
   private static Mocks selectorMock;
+  private static Mocks resolverMock;
 
   private static void useMocks(List<Database.SaveResult> saves, List<Inbound_Message__c> stored) {
     dmlMock = new Mocks().stubReturn('insertPartial', saves);
@@ -20,6 +23,8 @@ private class MessageStoreTest {
       Inbound_Message__c.SObjectType,
       (ISelector) selectorMock.stub(IInboundMessagesSelector.class)
     );
+    resolverMock = new Mocks().stubReturn('inspect', new Map<String, PayloadClaim>());
+    Application.Service.setMock(IPayloadResolver.class, resolverMock.stub(IPayloadResolver.class));
   }
 
   private static List<Inbound_Message__c> insertedRows() {
@@ -93,6 +98,8 @@ private class MessageStoreTest {
     Assert.areEqual('erp:ORD-7', row.Idempotency_Key__c, 'Key');
     Assert.areEqual(message.Message_Type__c, row.Message_Type__c, 'Type');
     Assert.areEqual(message.Payload__c, row.Payload__c, 'Payload');
+    Assert.areEqual(message.Payload__c.length(), row.Payload_Size__c, 'Inline size recorded for the dispatch budget');
+    Assert.isNull(row.Payload_Ref__c, 'No claim');
     Assert.areEqual(message.Correlation_Id__c, row.Correlation_Id__c, 'Correlation Id');
     Assert.areEqual(message.Occurred_At__c, row.Occurred_At__c, 'Occurred at');
     Assert.areEqual(MessageStatuses.RECEIVED, row.Status__c, 'Lifecycle starts at Received, whatever the caller set');
@@ -225,5 +232,137 @@ private class MessageStoreTest {
     Assert.areEqual(ids[199], results[199].getMessageId(), 'Results follow input order');
     Assert.areEqual('erp:ORD-0199', results[199].getIdempotencyKey(), 'Keys follow input order');
     Assert.areEqual(0, queries, 'No SOQL without duplicates');
+  }
+
+  private static Inbound_Message__c claimed(String externalId, String ref) {
+    Inbound_Message__c message = EventIngestionTestFactory.message(EventIngestionTestFactory.SOURCE, externalId);
+    message.Payload__c = null;
+    message.Payload_Ref__c = ref;
+    return message;
+  }
+
+  private static void useClaims(Map<String, PayloadClaim> claims) {
+    resolverMock = new Mocks().stubReturn('inspect', claims);
+    Application.Service.setMock(IPayloadResolver.class, resolverMock.stub(IPayloadResolver.class));
+  }
+
+  @IsTest
+  static void append_inlineOnly_neverInspects() {
+    useMocks(new List<Database.SaveResult>{ EventIngestionTestFactory.savedResult(null) }, null);
+
+    List<AppendResult> results = new MessageStore().append(EventIngestionTestFactory.messages(1));
+
+    Assert.isTrue(results[0].isAccepted(), 'Stored without a claim check');
+    resolverMock.verify('inspect', 0);
+  }
+
+  @IsTest
+  static void append_claimOnOwnFile_storesTheVersionIdAndFileSize() {
+    useMocks(new List<Database.SaveResult>{ EventIngestionTestFactory.savedResult(null) }, null);
+    ContentVersion version = EventIngestionTestFactory.version(UserInfo.getUserId(), 5000000, null);
+    String shortRef = String.valueOf(version.Id).left(15);
+    useClaims(new Map<String, PayloadClaim>{ shortRef => PayloadClaim.found(shortRef, version) });
+
+    List<AppendResult> results = new MessageStore().append(new List<Inbound_Message__c>{ claimed('ORD-1', shortRef) });
+
+    Assert.isTrue(results[0].isAccepted(), 'Accepted: ' + results[0].getError());
+    Inbound_Message__c row = insertedRows()[0];
+    Assert.areEqual(version.Id, row.Payload_Ref__c, 'Normalised to the 18-character version Id');
+    Assert.areEqual(5000000, row.Payload_Size__c, 'The file size, for the dispatch budget');
+    Assert.isNull(row.Payload__c, 'Nothing inline');
+    Assert.areEqual(new Set<String>{ shortRef }, resolverMock.argumentsOf('inspect', 0)[0], 'Inspected as sent');
+  }
+
+  @IsTest
+  static void append_inlineAndClaimTogether_rejectsWithTheKey() {
+    useMocks(null, null);
+    Inbound_Message__c both = claimed('ORD-1', FakeId.generate(ContentVersion.SObjectType));
+    both.Payload__c = '{}';
+
+    List<AppendResult> results = new MessageStore().append(new List<Inbound_Message__c>{ both });
+
+    Assert.isTrue(results[0].isRejected() && results[0].getError().contains('not both'), results[0].getError());
+    Assert.areEqual('erp:ORD-1', results[0].getIdempotencyKey(), 'Rejected by key, for the intake log');
+    resolverMock.verify('inspect', 0);
+    dmlMock.verify('insertPartial', 0);
+  }
+
+  @IsTest
+  static void append_claimsChecksEachAgainstItsOwnProducer() {
+    useMocks(new List<Database.SaveResult>{ EventIngestionTestFactory.savedResult(null) }, null);
+    Id uploader = FakeId.generate(User.SObjectType);
+    Id someoneElse = FakeId.generate(User.SObjectType);
+    ContentVersion version = EventIngestionTestFactory.version(uploader, 10, null);
+    useClaims(new Map<String, PayloadClaim>{ version.Id => PayloadClaim.found(version.Id, version) });
+    List<Inbound_Message__c> messages = new List<Inbound_Message__c>{
+      claimed('ORD-1', version.Id),
+      claimed('ORD-2', version.Id)
+    };
+
+    List<AppendResult> results = new MessageStore().append(messages, new List<Id>{ someoneElse, uploader });
+
+    Assert.isTrue(results[0].isRejected(), 'Another producer cannot claim the file');
+    Assert.isTrue(results[0].getError().contains('was not uploaded by the producer'), results[0].getError());
+    Assert.isTrue(results[1].isAccepted(), 'The uploader can');
+    Assert.areEqual(1, insertedRows().size(), 'Only the valid claim is inserted');
+    Assert.areEqual('ORD-2', insertedRows()[0].External_Message_Id__c, 'The kept row is the uploader\'s message');
+  }
+
+  @IsTest
+  static void append_claimWithoutProducers_checksTheRunningUser() {
+    useMocks(null, null);
+    ContentVersion version = EventIngestionTestFactory.version(FakeId.generate(User.SObjectType), 10, null);
+    useClaims(new Map<String, PayloadClaim>{ version.Id => PayloadClaim.found(version.Id, version) });
+
+    List<AppendResult> results = new MessageStore()
+      .append(new List<Inbound_Message__c>{ claimed('ORD-1', version.Id) });
+
+    Assert.isTrue(results[0].isRejected(), 'The caller did not upload it');
+    dmlMock.verify('insertPartial', 0);
+  }
+
+  @IsTest
+  static void append_unusableClaim_rejectsWithItsReason() {
+    useMocks(null, null);
+    String ref = FakeId.generate(ContentVersion.SObjectType);
+    useClaims(new Map<String, PayloadClaim>{ ref => PayloadClaim.unusable(ref, 'Too big.') });
+
+    List<AppendResult> results = new MessageStore().append(new List<Inbound_Message__c>{ claimed('ORD-1', ref) });
+
+    Assert.areEqual('Too big.', results[0].getError(), 'The resolver\'s reason');
+  }
+
+  @IsTest
+  static void append_producerListOfTheWrongSize_throws() {
+    useMocks(null, null);
+    try {
+      new MessageStore().append(EventIngestionTestFactory.messages(2), new List<Id>{ UserInfo.getUserId() });
+      Assert.fail('Expected IllegalArgumentException');
+    } catch (IllegalArgumentException e) {
+      Assert.isTrue(e.getMessage().contains('one producer Id per message'), e.getMessage());
+    }
+  }
+
+  @IsTest
+  static void append_200Claims_inspectsOnce() {
+    List<Database.SaveResult> saves = new List<Database.SaveResult>();
+    Map<String, PayloadClaim> claims = new Map<String, PayloadClaim>();
+    List<Inbound_Message__c> messages = new List<Inbound_Message__c>();
+    for (Integer i = 0; i < 200; i++) {
+      ContentVersion version = EventIngestionTestFactory.version(UserInfo.getUserId(), 10, null);
+      claims.put(version.Id, PayloadClaim.found(version.Id, version));
+      messages.add(claimed('ORD-' + i, version.Id));
+      saves.add(EventIngestionTestFactory.savedResult(null));
+    }
+    useMocks(saves, null);
+    useClaims(claims);
+
+    Test.startTest();
+    List<AppendResult> results = new MessageStore().append(messages);
+    Test.stopTest();
+
+    resolverMock.verify('inspect', 1);
+    Assert.areEqual(200, insertedRows().size(), 'Every claim inserted in one statement');
+    Assert.isTrue(results[199].isAccepted(), 'Accepted');
   }
 }

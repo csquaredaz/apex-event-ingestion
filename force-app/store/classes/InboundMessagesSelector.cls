@@ -33,6 +33,8 @@ public inherited sharing class InboundMessagesSelector extends SObjectSelector i
       Inbound_Message__c.Source__c,
       Inbound_Message__c.External_Message_Id__c,
       Inbound_Message__c.Message_Type__c,
+      Inbound_Message__c.Payload_Ref__c,
+      Inbound_Message__c.Payload_Size__c,
       Inbound_Message__c.Status__c,
       Inbound_Message__c.Attempts__c,
       Inbound_Message__c.Next_Attempt_At__c,

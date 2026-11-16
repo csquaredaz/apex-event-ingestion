@@ -65,7 +65,8 @@ public class EventIngestionTestFactory {
 
   /**
    * @description Delivered intake events from `SOURCE` with Ids `ORD-0000`, `ORD-0001`, …, and
-   * replay Ids `1`, `2`, … The read-only `ReplayId` and `EventUuid` are set with `JSON.deserialize`.
+   * replay Ids `1`, `2`, …, published by the running user. The read-only `ReplayId`, `EventUuid` and
+   * `CreatedById` are set with `JSON.deserialize`.
    * @param count How many.
    * @return The events.
    */
@@ -77,10 +78,48 @@ public class EventIngestionTestFactory {
         .clone();
       fields.put('ReplayId', String.valueOf(i + 1));
       fields.put('EventUuid', 'uuid-' + i);
+      fields.put('CreatedById', UserInfo.getUserId());
       fields.put('attributes', new Map<String, Object>{ 'type' => 'Inbound_Message_Event__e' });
       events.add((Inbound_Message_Event__e) JSON.deserialize(JSON.serialize(fields), Inbound_Message_Event__e.class));
     }
     return events;
+  }
+
+  /**
+   * @description Uploads a file as the running user, as a producer does for a claim check (ADR 0008).
+   * @param body The file's text.
+   * @return The new `ContentVersion` Id, which a message carries in `Payload_Ref__c`.
+   */
+  public static Id claimFile(String body) {
+    ContentVersion version = new ContentVersion(
+      Title = 'claim',
+      PathOnClient = 'claim.json',
+      VersionData = Blob.valueOf(body)
+    );
+    insert version;
+    return version.Id;
+  }
+
+  /**
+   * @description An in-memory `ContentVersion` with its read-only size and uploader set through
+   * `JSON.deserialize`, for Stub API selector mocks.
+   * @param uploadedById Who uploaded it.
+   * @param size `ContentSize` in bytes.
+   * @param data `VersionData`, or null to leave it out.
+   * @return The version, with a fake Id.
+   */
+  public static ContentVersion version(Id uploadedById, Integer size, Blob data) {
+    Map<String, Object> fields = new Map<String, Object>{
+      'attributes' => new Map<String, Object>{ 'type' => 'ContentVersion' },
+      'Id' => FakeId.generate(ContentVersion.SObjectType),
+      'CreatedById' => uploadedById,
+      'ContentSize' => size
+    };
+    ContentVersion version = (ContentVersion) JSON.deserialize(JSON.serialize(fields), ContentVersion.class);
+    if (data != null) {
+      version.VersionData = data;
+    }
+    return version;
   }
 
   /**

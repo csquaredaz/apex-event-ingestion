@@ -5,13 +5,15 @@
  * Subject:  MessageProcessorJob.execute
  * Mocks:    IInboundMessagesSelector, IMessageDispatcher, IMessageLifecycle, IProcessorQueue, ILogger
  * Bulk:     200 claimed messages → 1 claim, 1 dispatch of 200 Ids, 1 recordResults call
- * Negative: nothing due, a claim that times out on another job's lock
+ * Negative: nothing due, a claim that times out on another job's lock, payloads over the dispatch
+ *           budget (ADR 0008)
  */
 @IsTest
 private class MessageProcessorJobTest {
   private static Mocks selectorMock;
   private static Mocks dispatcherMock;
   private static Mocks lifecycleMock;
+  private static Mocks queueMock;
   private static RecordingLogger logger;
 
   private static void useMocks(Mocks selector, Map<Id, HandlerResult> results) {
@@ -27,7 +29,8 @@ private class MessageProcessorJobTest {
     logger = new RecordingLogger();
     Application.Service.setMock(ILogger.class, logger);
     // The Finalizer runs at stopTest; a test context can't take the job it would enqueue.
-    Application.Service.setMock(IProcessorQueue.class, new Mocks().stub(IProcessorQueue.class));
+    queueMock = new Mocks();
+    Application.Service.setMock(IProcessorQueue.class, queueMock.stub(IProcessorQueue.class));
   }
 
   private static List<Inbound_Message__c> claimed(Integer count) {
@@ -98,5 +101,59 @@ private class MessageProcessorJobTest {
     List<RecordingLogger.Entry> warnings = logger.entries(LoggingLevel.WARN);
     Assert.areEqual(1, warnings.size(), 'One warning');
     Assert.isTrue(warnings[0].message.endsWith('Record Currently Unavailable'), warnings[0].message);
+  }
+
+  private static List<Inbound_Message__c> sized(List<Integer> sizes) {
+    List<Inbound_Message__c> rows = claimed(sizes.size());
+    for (Integer i = 0; i < sizes.size(); i++) {
+      rows[i].Payload_Size__c = sizes[i];
+    }
+    return rows;
+  }
+
+  @IsTest
+  static void execute_payloadsOverTheBudget_dispatchesWhatFitsAndContinuesAtOnce() {
+    IngestionSettings.row = new Ingestion_Setting__mdt(Batch_Size__c = 200, Dispatch_Payload_Budget__c = 100);
+    List<Inbound_Message__c> rows = sized(new List<Integer>{ 60, 40, 1, 1 });
+    useMocks(new Mocks().stubReturn('selectClaimable', rows), new Map<Id, HandlerResult>());
+
+    runJob();
+
+    Set<Id> dispatched = (Set<Id>) dispatcherMock.argumentsOf('dispatch', 0)[0];
+    Assert.areEqual(new Set<Id>{ rows[0].Id, rows[1].Id }, dispatched, 'In claim order, up to the budget');
+    Assert.areEqual(
+      2,
+      ((List<Inbound_Message__c>) lifecycleMock.argumentsOf('recordResults', 0)[0]).size(),
+      'Only those are recorded'
+    );
+    Assert.areEqual(new List<Object>{ 0 }, queueMock.argumentsOf('enqueue', 0), 'The rest go to the next job at once');
+    Assert.isTrue(logger.entries(LoggingLevel.INFO)[0].message.contains('2 left for the next job'), 'Logged');
+  }
+
+  @IsTest
+  static void execute_firstPayloadAloneOverTheBudget_isStillTaken() {
+    IngestionSettings.row = new Ingestion_Setting__mdt(Dispatch_Payload_Budget__c = 100);
+    List<Inbound_Message__c> rows = sized(new List<Integer>{ 500, 1 });
+    useMocks(new Mocks().stubReturn('selectClaimable', rows), new Map<Id, HandlerResult>());
+
+    runJob();
+
+    Assert.areEqual(
+      new Set<Id>{ rows[0].Id },
+      dispatcherMock.argumentsOf('dispatch', 0)[0],
+      'One big payload cannot stall processing'
+    );
+  }
+
+  @IsTest
+  static void execute_payloadsWithinTheBudget_takesThemAllWithoutContinuing() {
+    IngestionSettings.row = new Ingestion_Setting__mdt(Batch_Size__c = 200, Dispatch_Payload_Budget__c = 100);
+    List<Inbound_Message__c> rows = sized(new List<Integer>{ 50, 50 });
+    useMocks(new Mocks().stubReturn('selectClaimable', rows), new Map<Id, HandlerResult>());
+
+    runJob();
+
+    Assert.areEqual(2, ((Set<Id>) dispatcherMock.argumentsOf('dispatch', 0)[0]).size(), 'Both fit exactly');
+    queueMock.verify('enqueue', 0);
   }
 }

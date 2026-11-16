@@ -42,6 +42,16 @@
         <field>Inbound_Message__c.Processed_At__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Inbound_Message__c.Payload_Ref__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Inbound_Message__c.Payload_Size__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Event Ingestion Viewer</label>
     <objectPermissions>

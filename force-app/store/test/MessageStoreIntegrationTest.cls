@@ -8,7 +8,7 @@
  * Mocks:    none
  * Bulk:     200 messages → 200 rows, 1 DML statement, no SOQL
  * Negative: duplicates across calls and within a batch, a rejected first copy, an oversized
- *           payload, and users without create access
+ *           payload, users without create access, and a claim on another user's file (ADR 0008)
  */
 @IsTest
 private class MessageStoreIntegrationTest {
@@ -219,5 +219,36 @@ private class MessageStoreIntegrationTest {
       }
     }
     Assert.areEqual(0, storedCount(), 'Nothing stored');
+  }
+
+  @IsTest
+  static void append_asProcessorClaimingItsOwnFile_storesTheClaimAndOnlyThat() {
+    Id othersFile = EventIngestionTestFactory.claimFile('{"theirs":true}');
+    User processor = EventIngestionTestFactory.minimumAccessUser(EventIngestionTestFactory.PROCESSOR);
+    List<AppendResult> results;
+    Id ownFile;
+    System.runAs(processor) {
+      ownFile = EventIngestionTestFactory.claimFile('{"mine":true}');
+      List<Inbound_Message__c> messages = EventIngestionTestFactory.messages(2);
+      for (Inbound_Message__c message : messages) {
+        message.Payload__c = null;
+      }
+      messages[0].Payload_Ref__c = ownFile;
+      messages[1].Payload_Ref__c = othersFile;
+      Test.startTest();
+      results = store().append(messages);
+      Test.stopTest();
+    }
+
+    Assert.isTrue(results[0].isAccepted(), 'Its own upload: ' + results[0].getError());
+    Assert.isTrue(results[1].isRejected(), 'Another user\'s file is not visible to it');
+    Inbound_Message__c row = [
+      SELECT Payload_Ref__c, Payload_Size__c
+      FROM Inbound_Message__c
+      WHERE Id = :results[0].getMessageId()
+      WITH SYSTEM_MODE
+    ];
+    Assert.areEqual(ownFile, row.Payload_Ref__c, 'The claim');
+    Assert.areEqual(13, row.Payload_Size__c, 'The file size');
   }
 }

@@ -65,7 +65,7 @@ public with sharing class InboundMessageEventsDomain extends SObjectDomain {
     ILogger logger = (ILogger) Application.Service.newInstance(ILogger.class);
     try {
       List<AppendResult> results = ((IMessageStore) Application.Service.newInstance(IMessageStore.class))
-        .append(toMessages(taken));
+        .append(toMessages(taken), publishers(taken));
       if (logRejections(taken, results, logger)) {
         MessageProcessing.enqueue();
       }
@@ -107,12 +107,25 @@ public with sharing class InboundMessageEventsDomain extends SObjectDomain {
           External_Message_Id__c = event.External_Message_Id__c,
           Message_Type__c = event.Message_Type__c,
           Payload__c = event.Payload__c,
+          Payload_Ref__c = event.Payload_Ref__c,
           Correlation_Id__c = event.Correlation_Id__c,
           Occurred_At__c = event.Occurred_At__c
         )
       );
     }
     return messages;
+  }
+
+  /**
+   * Who published each event. The trigger runs as the Automated Process user, which can read every
+   * file, so the store checks each claim against its publisher instead (ADR 0008).
+   */
+  private static List<Id> publishers(List<Inbound_Message_Event__e> events) {
+    List<Id> publisherIds = new List<Id>();
+    for (Inbound_Message_Event__e event : events) {
+      publisherIds.add(event.CreatedById);
+    }
+    return publisherIds;
   }
 
   /**
