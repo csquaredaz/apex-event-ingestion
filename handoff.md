@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-16 (PR 6 in review)
+Last updated: 2026-11-16 (after PR 6)
 
 ## Done
 
@@ -32,7 +32,7 @@ Last updated: 2026-11-16 (PR 6 in review)
   - Local run in `aei-dev`: 138 tests from C's 22 test classes, all passing; `InboundMessageEventsDomain` and the trigger 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (checkpoint removed) made the integration test fail (2 stored, not 3).
   - Not probed: the suspension after the 9th retry (platform documentation).
 
-- **PR 6 `feat/claim-check` (in review).** API approved 2026-11-16 with all four design calls: `IPayloadResolver` (`DI_Binding.Payload_Resolver` → `ContentVersionPayloadResolver`), `PayloadClaim`, `IContentVersionsSelector`/`ContentVersionsSelector` (`DI_Binding.Content_Versions_Selector`), `MessageClaims`, `IMessageStore.append(messages, producerIds)`, `InboundMessage.fromRecord(row, resolvedPayload)` and `getPayloadRef()`, `Payload_Ref__c` on the message and the event, `Payload_Size__c`, `Claim_Max_Bytes__c` (3,000,000) and `Dispatch_Payload_Budget__c` (4,000,000). ADR 0008; ADRs 0002 and 0006 amended.
+- **PR 6 `feat/claim-check` merged 2026-11-16 as `2a80139` (PR #6).** The ready run, 43924867552, used one CI org: 179 tests from C's 27 test classes, package coverage 100%. The `main` run, 43927349213, reused that result (scratch-org job skipped) and published the badge. API approved 2026-11-16 with all four design calls: `IPayloadResolver` (`DI_Binding.Payload_Resolver` → `ContentVersionPayloadResolver`), `PayloadClaim`, `IContentVersionsSelector`/`ContentVersionsSelector` (`DI_Binding.Content_Versions_Selector`), `MessageClaims`, `IMessageStore.append(messages, producerIds)`, `InboundMessage.fromRecord(row, resolvedPayload)` and `getPayloadRef()`, `Payload_Ref__c` on the message and the event, `Payload_Size__c`, `Claim_Max_Bytes__c` (3,000,000) and `Dispatch_Payload_Budget__c` (4,000,000). ADR 0008; ADRs 0002 and 0006 amended.
   - Chad's calls: (1) a claim is valid only when its producer uploaded that exact version (`ContentVersion.CreatedById`), because the Automated Process user can read every file (a confused deputy otherwise); no link, library or sharing step; (2) the inline cut-over is the 131,072-character field limit, and a message with both an inline payload and a claim is rejected; the ref is a version Id; (3) a per-message cap at intake plus a per-job dispatch budget over `Payload_Size__c`, always at least one message, the rest left untouched with the Finalizer continuing at once; (4) a claim that can't be loaded at dispatch (missing, invisible, not UTF-8) is `FATAL`.
   - Changed after the API gate: `verify(Map<String, Id>)` became `inspect(Set<String>)` returning `PayloadClaim`, because a map keyed by ref can't hold two messages with the same ref from different producers. `MessageClaims` was split out of `MessageStore` to keep it under Code Analyzer's cognitive-complexity threshold. A null entry in `producerIds` means the running user.
   - Local run in `aei-dev`: 179 tests from C's 27 test classes, all passing, every class 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (the uploader check removed) failed 5 tests, including the end-to-end rejection.
@@ -89,8 +89,8 @@ Last updated: 2026-11-16 (PR 6 in review)
 
 ## Notes for the next session
 
-- **PR 6 `feat/claim-check` is in review.** After it merges, the handoff update goes first on `feat/stall-detection` (pushed, no PR), and PR 7 starts there. PR 7 still has to decide how the sweeper updates rows it doesn't own (open decisions).
-- Dev Hub on 2026-11-16, before PR 6 went ready: 2 of 3 active slots free (`aei-dev` holds one), 5/6 daily scratch orgs.
-- `aei-dev` (expires around 2026-12-13) holds PR 6 (`feat/claim-check`): store, dispatch, processing, intake and claim are deployed, and every permission set is assigned to the default user. The Automated Process user has no permission set, on purpose (ADR 0007).
+- **Next: PR 7 `feat/stall-detection`.** This branch was cut from `main` at `2a80139`, and its first commit is this handoff. Decide first how the sweeper updates messages it doesn't own (open decisions): it runs as whoever schedules it, not the Automated Process user.
+- Dev Hub on 2026-11-16, after PR 6: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs.
+- `aei-dev` (expires around 2026-12-13) is in sync with `main` at `2a80139`: store, dispatch, processing, intake and claim are deployed, and every permission set is assigned to the default user. The Automated Process user has no permission set, on purpose (ADR 0007).
 - To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
