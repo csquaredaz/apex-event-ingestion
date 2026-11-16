@@ -28,7 +28,8 @@ Option 1: a custom object, because it is the only option with a database-enforce
 The object:
 
 - **Status** (`Status__c`, a restricted picklist): `Received → Processed`, or `Failed` (will retry at `Next_Attempt_At__c`) and then `Dead` (out of attempts). The first version also had `Processing`; ADR 0006 removed it (amended 2026-11-15). `MessageStatuses` holds the values as constants.
-- **Producer fields**, copied from the message on append: `Source__c`, `External_Message_Id__c`, `Message_Type__c`, `Payload__c`, `Correlation_Id__c`, `Occurred_At__c`.
+- **Producer fields**, copied from the message on append: `Source__c`, `External_Message_Id__c`, `Message_Type__c`, `Payload__c`, `Payload_Ref__c` (a claim check, ADR 0008; amended 2026-11-16), `Correlation_Id__c`, `Occurred_At__c`.
+- **`Payload_Size__c`**, set by the store from the inline payload or the claimed file, so the processor job can keep one job within the heap (ADR 0008; amended 2026-11-16).
 - **Lifecycle fields**, owned by the package: `Status__c`, `Attempts__c`, `Next_Attempt_At__c`, `Last_Error__c`, `Processed_At__c`. `MessageStore.append` never copies them from the caller, so a producer can't inject a message as already `Processed`. `Locked_Until__c` was removed with `Processing`: a processor job claims rows with a row lock instead (ADR 0006).
 - **Sharing:** OWD Private. Two permission sets:
   - `Event_Ingestion_Processor`: create, read and edit, plus View All, for the user that runs ingestion. It has no Modify All, because Modify All also requires Delete, and the package never deletes messages. How the stall sweeper updates rows it doesn't own is decided in PR 7.

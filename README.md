@@ -51,6 +51,25 @@ EventBus.publish(
 );
 ```
 
+A payload over `Payload__c`'s 131,072 characters travels by claim check: the producer uploads it as a file and sends the version Id instead. The claim is accepted only when the same user uploaded that version, and the file is at most `Claim_Max_Bytes__c` (3,000,000 bytes by default). Handlers get the file's text from `InboundMessage.getPayload()` as usual:
+
+```apex
+ContentVersion file = new ContentVersion(
+  Title = 'ORD-1042 lines',
+  PathOnClient = 'ord-1042.json',
+  VersionData = Blob.valueOf(largeJson)
+);
+insert file;
+EventBus.publish(
+  new Inbound_Message_Event__e(
+    Source__c = 'erp',
+    External_Message_Id__c = 'ORD-1042-lines',
+    Message_Type__c = 'order.lines_replaced',
+    Payload_Ref__c = file.Id
+  )
+);
+```
+
 Apex producers that want a result per message can call the store directly instead (the running user needs `Event_Ingestion_Processor`):
 
 ```apex
@@ -104,6 +123,7 @@ public with sharing class OrderStatusChangedHandler implements IMessageHandler {
 | Ordering      | No ordering guarantee; handlers skip stale updates with `InboundMessage.isOlderThan`                                                                                                                                                                                                         | Per-record sequencing; a single ordered job                               | [0005](docs/adr/0005-no-ordering-guarantee.md)             |
 | Recovery      | `MessageProcessorJob` claims a batch with a `FOR UPDATE` row lock, dispatches and records outcomes in one transaction; its Finalizer recovers a failed job's messages (`Failed` with exponential backoff, or `Dead`) and enqueues the next run; one duplicate signature keeps one job queued | A stored `Processing` status; two jobs per batch; chaining from `execute` | [0006](docs/adr/0006-queueable-finalizer-recovery.md)      |
 | Intake        | High-volume `Inbound_Message_Event__e` (Publish After Commit); the trigger takes up to 200 events or 3,000,000 payload characters per run with a resume checkpoint, retries every failure and alerts on the last retry; stored and processed by the Automated Process user                   | Direct store calls only; an Apex REST endpoint; giving up after 3 retries | [0007](docs/adr/0007-platform-event-intake.md)             |
+| Claim Check   | A payload over 131,072 characters travels as a `ContentVersion` Id in `Payload_Ref__c`; the store accepts it only from the user who uploaded that version, within 3,000,000 bytes; one processor job dispatches at most 4,000,000 payload characters and bytes                               | Trusting file visibility; a link to the message record; a library         | [0008](docs/adr/0008-claim-check.md)                       |
 
 ## Testing
 

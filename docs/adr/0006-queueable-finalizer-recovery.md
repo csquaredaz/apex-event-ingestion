@@ -63,6 +63,7 @@ If the job fails past the handlers' guard, the Finalizer counts a retryable atte
 ## Consequences
 
 - Limits per job: 1 SOQL to claim, 1 to load payloads, the handlers' own budget, and 1 DML statement for statuses; recovery adds 1 SOQL and 1 DML in the Finalizer. Bulk-tested at 200.
+- **Amended 2026-11-16 (ADR 0008):** the job dispatches only the claimed messages whose `Payload_Size__c` fits `Dispatch_Payload_Budget__c` together, always at least one. The rest keep their state with no attempt counted, and the Finalizer treats a trimmed claim as a full batch, so the next job starts at once. Claimed files add 1 SOQL.
 - The lifecycle is `Received → Processed`, or `Failed` and then `Dead`. There is no stored in-flight status, so ADR 0009's sweeper only has to find due messages with no job, not reset abandoned locks.
 - **Known limit:** if recovery itself fails (for example, `UNABLE_TO_LOCK_ROW` because another job holds the rows), the messages keep their previous state without an attempt counted. A message that always breaks the job then never reaches `Dead`. The Finalizer logs and alerts, and doesn't continue, so it doesn't loop at once; the stall sweeper alerts on messages that stay due.
 - Alerts name Ids and counts only. Exception text can quote payload data, so it goes to `Last_Error__c` and the log.
