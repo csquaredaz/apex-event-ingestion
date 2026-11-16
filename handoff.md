@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-16 (after PR 6)
+Last updated: 2026-11-16 (PR 7 open)
 
 ## Done
 
@@ -37,6 +37,12 @@ Last updated: 2026-11-16 (after PR 6)
   - Changed after the API gate: `verify(Map<String, Id>)` became `inspect(Set<String>)` returning `PayloadClaim`, because a map keyed by ref can't hold two messages with the same ref from different producers. `MessageClaims` was split out of `MessageStore` to keep it under Code Analyzer's cognitive-complexity threshold. A null entry in `producerIds` means the running user.
   - Local run in `aei-dev`: 179 tests from C's 27 test classes, all passing, every class 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (the uploader check removed) failed 5 tests, including the end-to-end rejection.
 
+- **PR 7 `feat/stall-detection` (open).** API approved 2026-11-16 with all five design calls: `StallSweeperSchedulable` (`execute`, `scheduleEveryQuarterHour()`, `cronAt`), `IStallDetector.sweep(Datetime)` (`DI_Binding.Stall_Detector` → `StallDetector`), `StallReport`, `IInboundMessagesSelector.selectDue(Datetime, Integer)`, `MessageProcessing.requestRun()`, `IngestionSettings.getStallAfterMinutes()` (`Stall_After_Minutes__c`, 30), `Processor_Wake_Event__e` + `ProcessorWakeEventTrigger` → `ProcessorWakeEventsDomain` (`DI_Binding.Processor_Wake_Events_Domain`), permission set `Event_Ingestion_Sweeper`, `scripts/schedule-stall-sweeper.apex` (`npm run org:schedule-sweeper`). ADR 0009; ADRs 0002 and 0006 amended.
+  - Chad's calls: (1) the sweeper never updates or enqueues; it publishes a data-free wake event whose trigger enqueues the job as the Automated Process user; (2) stalled = due for more than 30 minutes (two sweeps); (3) one WARNING per sweep while stalled, stateless; (4) count capped at 200 ("200 or more"), no `COUNT()`; (5) a new least-privilege `Event_Ingestion_Sweeper`.
+  - No probe 8: the design composes proven facts. Checked live in `aei-dev` instead: an admin-published wake event produced a `MessageProcessorJob` run by Automated Process (Completed).
+  - Changed after the API gate: the wake event has no custom fields (the planned `Requested_By__c` was dropped; a field-less high-volume event deploys).
+  - Local run in `aei-dev`: 208 tests from C's 32 test classes, all passing, every class 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (the wake call removed) failed 4 tests. Review: Approved with comments, 2 Low fixed (Id order in the alert, a null time).
+
 ## Approved design
 
 | ADR  | Decision                | Choice                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -49,7 +55,7 @@ Last updated: 2026-11-16 (after PR 6)
 | 0006 | Finalizer recovery      | `MessageProcessorJob` claims a batch with a `FOR UPDATE` row lock (the lock is the claim; no stored in-flight status), dispatches and records outcomes in one transaction. `MessageProcessorFinalizer` recovers a failed job's messages (`Failed` with exponential backoff, or `Dead` at the maximum), alerts, and always decides the next run. One duplicate signature keeps one job queued. Limits in `Ingestion_Setting__mdt` |
 | 0007 | Intake                  | High-volume Platform Event `Inbound_Message_Event__e` (Publish After Commit) with a trigger domain, `RetryableException` on every failure and resume checkpoints. The Automated Process user stores and processes everything with no permission set (probe 2). `PlatformEventSubscriberConfig` with `Event_Ingestion_Processor` is the documented alternative                                                                    |
 | 0008 | Claim Check (built now) | A payload over the inline limit is uploaded by the producer as a `ContentVersion`. The event carries the claim (`Payload_Ref__c`), and `IPayloadResolver` loads it at dispatch, within a per-message size cap that fits the async heap                                                                                                                                                                                           |
-| 0009 | Stall detection         | Scheduled `StallSweeper` (four schedules for a 15-minute sweep, set up as a documented step). Resets expired `Processing` locks, re-enqueues old `Received` messages that have no job, and alerts                                                                                                                                                                                                                                |
+| 0009 | Stall detection         | `StallSweeperSchedulable` on four 15-minute schedules (a documented setup step) runs `StallDetector`: reads due messages in user mode, publishes `Processor_Wake_Event__e` so the job runs as the Automated Process user, and alerts WARNING on messages due for more than `Stall_After_Minutes__c` (30). No locks to reset (ADR 0006)                                                                                           |
 
 ## Next: PR plan (every PR targets `main`, none stacked)
 
@@ -83,13 +89,14 @@ Last updated: 2026-11-16 (after PR 6)
 
 ## Open decisions
 
-| Decision                                                                                          | Options                                                                                                                                                                    | Leaning                                                                                                                                                                                                                                                                                 | Needed by |
-| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| Processing and sweeping messages another user owns (claimed but not updatable: proven 2026-11-15) | Modify All (needs Delete too); a documented system-mode status write in `MessageLifecycle`; or one ingestion user (Automated Process) that stores and processes everything | **Settled in PR 5 (ADR 0007):** the Automated Process user stores and processes every event-borne message and can update rows other users own. Still applies to Apex producers calling the store directly as another user; PR 7's sweeper runs as whoever schedules it, so decide there | PR 7      |
+| Decision                                           | Options | Leaning                                                                                                                                                                                                                         | Needed by |
+| -------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| Processing and sweeping messages another user owns | —       | **Settled.** PR 5 (ADR 0007): the Automated Process user stores and processes every event-borne message. PR 7 (ADR 0009): the sweeper only reads and publishes a wake event, so its job also runs as the Automated Process user | —         |
 
 ## Notes for the next session
 
-- **Next: PR 7 `feat/stall-detection`.** This branch was cut from `main` at `2a80139`, and its first commit is this handoff. Decide first how the sweeper updates messages it doesn't own (open decisions): it runs as whoever schedules it, not the Automated Process user.
+- **Now: PR 7 `feat/stall-detection`**, cut from `main` at `2a80139`. After it merges: PR 8 `feat/example-and-docs` (the example handlers and routes, `IngestionEndToEndTest`, the full README, the case study, the `## 1.0.0` changelog section). The README's setup steps there should list `npm run org:schedule-sweeper` and the `Event_Ingestion_Sweeper` assignment.
+- `aei-dev` has PR 7 deployed (tests and the wake trigger). The sweeper is **not** scheduled there, on purpose.
 - Dev Hub on 2026-11-16, after PR 6: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs.
 - `aei-dev` (expires around 2026-12-13) is in sync with `main` at `2a80139`: store, dispatch, processing, intake and claim are deployed, and every permission set is assigned to the default user. The Automated Process user has no permission set, on purpose (ADR 0007).
 - To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
