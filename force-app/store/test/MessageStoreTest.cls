@@ -14,6 +14,7 @@ private class MessageStoreTest {
   private static Mocks dmlMock;
   private static Mocks selectorMock;
   private static Mocks resolverMock;
+  private static User processorUser;
 
   private static void useMocks(List<Database.SaveResult> saves, List<Inbound_Message__c> stored) {
     dmlMock = new Mocks().stubReturn('insertPartial', saves);
@@ -29,6 +30,31 @@ private class MessageStoreTest {
 
   private static List<Inbound_Message__c> insertedRows() {
     return (List<Inbound_Message__c>) dmlMock.argumentsOf('insertPartial', 0)[0];
+  }
+
+  /**
+   * `append` checks the running user's create access for real, even with the DML mocked, so the
+   * tests run as a Minimum Access user with `Event_Ingestion_Processor`, never as the admin, who
+   * has no package permission set in the package build org. Created once per test; tests that
+   * measure limits call it before `Test.startTest()`.
+   */
+  private static User processor() {
+    if (processorUser == null) {
+      processorUser = EventIngestionTestFactory.minimumAccessUser('Event_Ingestion_Processor');
+    }
+    return processorUser;
+  }
+
+  private static List<AppendResult> appendAsProcessor(List<Inbound_Message__c> messages) {
+    return appendAsProcessor(messages, null);
+  }
+
+  private static List<AppendResult> appendAsProcessor(List<Inbound_Message__c> messages, List<Id> producerIds) {
+    List<AppendResult> results;
+    System.runAs(processor()) {
+      results = new MessageStore().append(messages, producerIds);
+    }
+    return results;
   }
 
   private static Inbound_Message__c storedRow(String key) {
@@ -53,8 +79,8 @@ private class MessageStoreTest {
   static void append_nullOrEmpty_returnsNothingWithoutDml() {
     useMocks(new List<Database.SaveResult>(), new List<Inbound_Message__c>());
 
-    Assert.areEqual(0, new MessageStore().append(null).size(), 'Null input');
-    Assert.areEqual(0, new MessageStore().append(new List<Inbound_Message__c>()).size(), 'Empty input');
+    Assert.areEqual(0, appendAsProcessor(null).size(), 'Null input');
+    Assert.areEqual(0, appendAsProcessor(new List<Inbound_Message__c>()).size(), 'Empty input');
     dmlMock.verify('insertPartial', 0);
   }
 
@@ -70,8 +96,9 @@ private class MessageStoreTest {
       null
     );
 
+    processor(); // setup DML and queries stay outside the measured block
     Test.startTest();
-    List<AppendResult> results = new MessageStore().append(EventIngestionTestFactory.messages(2));
+    List<AppendResult> results = appendAsProcessor(EventIngestionTestFactory.messages(2));
     Test.stopTest();
 
     Assert.areEqual(AppendResult.Outcome.ACCEPTED, results[0].getOutcome(), 'Outcome');
@@ -92,7 +119,7 @@ private class MessageStoreTest {
     message.Last_Error__c = 'stale';
     message.Processed_At__c = Datetime.now();
 
-    new MessageStore().append(new List<Inbound_Message__c>{ message });
+    appendAsProcessor(new List<Inbound_Message__c>{ message });
 
     Inbound_Message__c row = insertedRows()[0];
     Assert.areEqual('erp:ORD-7', row.Idempotency_Key__c, 'Key');
@@ -118,7 +145,7 @@ private class MessageStoreTest {
       EventIngestionTestFactory.message('erp', '')
     };
 
-    List<AppendResult> results = new MessageStore().append(messages);
+    List<AppendResult> results = appendAsProcessor(messages);
 
     Assert.areEqual(4, results.size(), 'One result per message');
     Assert.isTrue(results[0].isRejected() && results[0].getError().contains('Source__c'), results[0].getError());
@@ -136,8 +163,9 @@ private class MessageStoreTest {
   static void append_noValidMessages_skipsTheInsert() {
     useMocks(null, null);
 
-    List<AppendResult> results = new MessageStore()
-      .append(new List<Inbound_Message__c>{ EventIngestionTestFactory.message('erp:eu', 'ORD-1') });
+    List<AppendResult> results = appendAsProcessor(
+      new List<Inbound_Message__c>{ EventIngestionTestFactory.message('erp:eu', 'ORD-1') }
+    );
 
     Assert.isTrue(results[0].isRejected(), 'Ambiguous source rejected');
     dmlMock.verify('insertPartial', 0);
@@ -159,7 +187,7 @@ private class MessageStoreTest {
     List<Inbound_Message__c> messages = EventIngestionTestFactory.messages(2);
     messages.add(EventIngestionTestFactory.message('erp', 'ORD-0001'));
 
-    List<AppendResult> results = new MessageStore().append(messages);
+    List<AppendResult> results = appendAsProcessor(messages);
 
     Assert.isTrue(results[0].isAccepted(), 'New message accepted');
     Assert.isTrue(results[1].isDuplicate() && results[2].isDuplicate(), 'Both copies are duplicates');
@@ -180,7 +208,7 @@ private class MessageStoreTest {
       new List<Inbound_Message__c>()
     );
 
-    List<AppendResult> results = new MessageStore().append(EventIngestionTestFactory.messages(1));
+    List<AppendResult> results = appendAsProcessor(EventIngestionTestFactory.messages(1));
 
     Assert.isTrue(results[0].isDuplicate(), 'Still a duplicate');
     Assert.isNull(results[0].getMessageId(), 'No Id for a row the user cannot see');
@@ -198,7 +226,7 @@ private class MessageStoreTest {
       null
     );
 
-    List<AppendResult> results = new MessageStore().append(EventIngestionTestFactory.messages(1));
+    List<AppendResult> results = appendAsProcessor(EventIngestionTestFactory.messages(1));
 
     Assert.isTrue(results[0].isRejected(), 'Rejected');
     Assert.areEqual(
@@ -221,8 +249,9 @@ private class MessageStoreTest {
     }
     useMocks(saves, null);
 
+    processor(); // setup DML and queries stay outside the measured block
     Test.startTest();
-    List<AppendResult> results = new MessageStore().append(EventIngestionTestFactory.messages(200));
+    List<AppendResult> results = appendAsProcessor(EventIngestionTestFactory.messages(200));
     Integer queries = Limits.getQueries();
     Test.stopTest();
 
@@ -250,7 +279,7 @@ private class MessageStoreTest {
   static void append_inlineOnly_neverInspects() {
     useMocks(new List<Database.SaveResult>{ EventIngestionTestFactory.savedResult(null) }, null);
 
-    List<AppendResult> results = new MessageStore().append(EventIngestionTestFactory.messages(1));
+    List<AppendResult> results = appendAsProcessor(EventIngestionTestFactory.messages(1));
 
     Assert.isTrue(results[0].isAccepted(), 'Stored without a claim check');
     resolverMock.verify('inspect', 0);
@@ -259,11 +288,11 @@ private class MessageStoreTest {
   @IsTest
   static void append_claimOnOwnFile_storesTheVersionIdAndFileSize() {
     useMocks(new List<Database.SaveResult>{ EventIngestionTestFactory.savedResult(null) }, null);
-    ContentVersion version = EventIngestionTestFactory.version(UserInfo.getUserId(), 5000000, null);
+    ContentVersion version = EventIngestionTestFactory.version(processor().Id, 5000000, null);
     String shortRef = String.valueOf(version.Id).left(15);
     useClaims(new Map<String, PayloadClaim>{ shortRef => PayloadClaim.found(shortRef, version) });
 
-    List<AppendResult> results = new MessageStore().append(new List<Inbound_Message__c>{ claimed('ORD-1', shortRef) });
+    List<AppendResult> results = appendAsProcessor(new List<Inbound_Message__c>{ claimed('ORD-1', shortRef) });
 
     Assert.isTrue(results[0].isAccepted(), 'Accepted: ' + results[0].getError());
     Inbound_Message__c row = insertedRows()[0];
@@ -279,7 +308,7 @@ private class MessageStoreTest {
     Inbound_Message__c both = claimed('ORD-1', FakeId.generate(ContentVersion.SObjectType));
     both.Payload__c = '{}';
 
-    List<AppendResult> results = new MessageStore().append(new List<Inbound_Message__c>{ both });
+    List<AppendResult> results = appendAsProcessor(new List<Inbound_Message__c>{ both });
 
     Assert.isTrue(results[0].isRejected() && results[0].getError().contains('not both'), results[0].getError());
     Assert.areEqual('erp:ORD-1', results[0].getIdempotencyKey(), 'Rejected by key, for the intake log');
@@ -299,7 +328,7 @@ private class MessageStoreTest {
       claimed('ORD-2', version.Id)
     };
 
-    List<AppendResult> results = new MessageStore().append(messages, new List<Id>{ someoneElse, uploader });
+    List<AppendResult> results = appendAsProcessor(messages, new List<Id>{ someoneElse, uploader });
 
     Assert.isTrue(results[0].isRejected(), 'Another producer cannot claim the file');
     Assert.isTrue(results[0].getError().contains('was not uploaded by the producer'), results[0].getError());
@@ -314,8 +343,7 @@ private class MessageStoreTest {
     ContentVersion version = EventIngestionTestFactory.version(FakeId.generate(User.SObjectType), 10, null);
     useClaims(new Map<String, PayloadClaim>{ version.Id => PayloadClaim.found(version.Id, version) });
 
-    List<AppendResult> results = new MessageStore()
-      .append(new List<Inbound_Message__c>{ claimed('ORD-1', version.Id) });
+    List<AppendResult> results = appendAsProcessor(new List<Inbound_Message__c>{ claimed('ORD-1', version.Id) });
 
     Assert.isTrue(results[0].isRejected(), 'The caller did not upload it');
     dmlMock.verify('insertPartial', 0);
@@ -327,7 +355,7 @@ private class MessageStoreTest {
     String ref = FakeId.generate(ContentVersion.SObjectType);
     useClaims(new Map<String, PayloadClaim>{ ref => PayloadClaim.unusable(ref, 'Too big.') });
 
-    List<AppendResult> results = new MessageStore().append(new List<Inbound_Message__c>{ claimed('ORD-1', ref) });
+    List<AppendResult> results = appendAsProcessor(new List<Inbound_Message__c>{ claimed('ORD-1', ref) });
 
     Assert.areEqual('Too big.', results[0].getError(), 'The resolver\'s reason');
   }
@@ -336,7 +364,7 @@ private class MessageStoreTest {
   static void append_producerListOfTheWrongSize_throws() {
     useMocks(null, null);
     try {
-      new MessageStore().append(EventIngestionTestFactory.messages(2), new List<Id>{ UserInfo.getUserId() });
+      appendAsProcessor(EventIngestionTestFactory.messages(2), new List<Id>{ UserInfo.getUserId() });
       Assert.fail('Expected IllegalArgumentException');
     } catch (IllegalArgumentException e) {
       Assert.isTrue(e.getMessage().contains('one producer Id per message'), e.getMessage());
@@ -349,7 +377,7 @@ private class MessageStoreTest {
     Map<String, PayloadClaim> claims = new Map<String, PayloadClaim>();
     List<Inbound_Message__c> messages = new List<Inbound_Message__c>();
     for (Integer i = 0; i < 200; i++) {
-      ContentVersion version = EventIngestionTestFactory.version(UserInfo.getUserId(), 10, null);
+      ContentVersion version = EventIngestionTestFactory.version(processor().Id, 10, null);
       claims.put(version.Id, PayloadClaim.found(version.Id, version));
       messages.add(claimed('ORD-' + i, version.Id));
       saves.add(EventIngestionTestFactory.savedResult(null));
@@ -357,8 +385,9 @@ private class MessageStoreTest {
     useMocks(saves, null);
     useClaims(claims);
 
+    processor(); // setup DML and queries stay outside the measured block
     Test.startTest();
-    List<AppendResult> results = new MessageStore().append(messages);
+    List<AppendResult> results = appendAsProcessor(messages);
     Test.stopTest();
 
     resolverMock.verify('inspect', 1);

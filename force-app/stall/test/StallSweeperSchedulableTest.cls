@@ -8,6 +8,15 @@
  */
 @IsTest
 private class StallSweeperSchedulableTest {
+  /**
+   * The scheduled jobs run, with the real detector, when the test ends, as the user who scheduled
+   * them. That is a Minimum Access user with `Event_Ingestion_Sweeper` (README setup step 1), not
+   * the admin, who has no package permission set in the package build org.
+   */
+  private static User sweeper() {
+    return EventIngestionTestFactory.minimumAccessUser('Event_Ingestion_Sweeper');
+  }
+
   @IsTest
   static void execute_scheduledRun_sweepsOnceThroughTheBoundDetector() {
     Mocks detectorMock = new Mocks().stubReturn('sweep', new StallReport(Datetime.now(), null, null));
@@ -23,9 +32,12 @@ private class StallSweeperSchedulableTest {
 
   @IsTest
   static void scheduleEveryQuarterHour_once_schedulesFourNamedJobs() {
-    Test.startTest();
-    List<Id> jobIds = StallSweeperSchedulable.scheduleEveryQuarterHour();
-    Test.stopTest();
+    List<Id> jobIds;
+    System.runAs(sweeper()) {
+      Test.startTest();
+      jobIds = StallSweeperSchedulable.scheduleEveryQuarterHour();
+      Test.stopTest();
+    }
 
     Assert.areEqual(4, jobIds.size(), 'One per quarter hour');
     Map<String, String> cronByName = new Map<String, String>();
@@ -51,13 +63,15 @@ private class StallSweeperSchedulableTest {
 
   @IsTest
   static void scheduleEveryQuarterHour_alreadyScheduled_throwsAsyncException() {
-    StallSweeperSchedulable.scheduleEveryQuarterHour();
-
-    try {
+    System.runAs(sweeper()) {
       StallSweeperSchedulable.scheduleEveryQuarterHour();
-      Assert.fail('Expected AsyncException');
-    } catch (AsyncException e) {
-      Assert.isTrue(e.getMessage().contains('aei stall sweeper :00'), e.getMessage());
+
+      try {
+        StallSweeperSchedulable.scheduleEveryQuarterHour();
+        Assert.fail('Expected AsyncException');
+      } catch (AsyncException e) {
+        Assert.isTrue(e.getMessage().contains('aei stall sweeper :00'), e.getMessage());
+      }
     }
     Assert.areEqual(
       4,

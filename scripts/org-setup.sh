@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Create a scratch org, install package dependencies, deploy this repo and assign permissions.
 # Usage: npm run org:setup [-- <alias>]   (default alias: the repo name)
+# SKIP_PERMSETS=1 leaves the default user without this repo's permission sets, like the org that
+# `sf package version create --code-coverage` runs the package's tests in. CI sets it, so a test
+# that leans on the running admin's access fails in CI, not in the release build.
 set -euo pipefail
 
 alias_name="${1:-apex-event-ingestion}"
@@ -23,6 +26,11 @@ node -e '
 done
 
 sf project deploy start --target-org "$alias_name" --wait 20
+
+if [ "${SKIP_PERMSETS:-}" = "1" ]; then
+  echo "Scratch org '$alias_name' is ready, with no permission sets assigned (SKIP_PERMSETS=1)."
+  exit 0
+fi
 
 # Assign every permission set in the package directories (the package and the unpackaged example/),
 # so the default user can exercise the features. (find, not **, because macOS ships bash 3.2 without
