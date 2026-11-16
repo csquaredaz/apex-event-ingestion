@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-16 (release 1.0.0, PR 9)
+Last updated: 2026-11-16 (public; C is done)
 
 ## Done
 
@@ -55,6 +55,10 @@ Last updated: 2026-11-16 (release 1.0.0, PR 9)
   - **Smoke test in a fresh `aei-smoke` org:** A `1.1.0-1`, then the beta, then `example/` as source; no permission sets during the tests. 238/238 passed from 37 classes (force-app's 32 from the 04t, example's 5 from source). A live event was stored and processed as Automated Process (Processed, attempt 1); order `SMOKE-0001` read `Shipped` and `Shipment__c` `SMOKE-TRK-1` was created: the packaged `Type.forName` resolves source handlers (probe 5's second half). The owner deletes the org.
 - **PR 9 `docs/release-1.0.0`:** the `0Ho` and `apex-event-ingestion@1.0.0-1` aliases, the README Install section (A, then C, then optionally `example/`), a Testing note on CI's no-permission-set org, and this handoff. `org-setup.sh` stays a source deploy for contributors.
 
+- **Public 2026-11-16.** PR #9 merged as `e6c0b09`; the `main` run 43959936206 reused its result. Merged branches `docs/release-1.0.0` and `fix/tests-without-permsets` deleted with the owner's OK after `--is-ancestor` checks. The smoke org was deleted by the owner.
+  - Read-only audit before the flip, clean, so no fix PR: full-history gitleaks (63 commits); a grep of every diff and commit message for org and user Ids, instance and auth URLs, Slack hooks, personal email and employer names (one false positive, a `sha512` hash in `package-lock.json`); noreply identity on every commit and the tag; all 36 CI and release logs (masked; the only key names are the line that deletes them) and 31 artifacts; the job-summary sources; the text of PRs #1–#10, the release notes and the tag message. Final checks: ApexDoc on every public class, no `TODO`s, the case study and ADRs 0001–0009, every `npm run` script the docs name.
+  - The owner kept all 36 CI runs (none shows an org detail; the failed first release build stays as a record). The owner flipped the visibility with `gh repo edit`; the CI, coverage (100%), API and license badges render.
+
 ## Approved design
 
 | ADR  | Decision                | Choice                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -107,8 +111,8 @@ Last updated: 2026-11-16 (release 1.0.0, PR 9)
 
 ## Notes for the next session
 
-- **Next: going public**, the gated sequence planned separately: fix any leak sources first (a PR only if the scan finds something), delete the old CI runs, scan the remaining logs and the PR text, then flip visibility. All 10 PRs are merged once PR 9 is.
-- `aei-dev` (expires around 2026-12-13) has A `1.1.0-1` and **source** (never the beta) and is in sync with `main`; all five permission sets are assigned to the default user again after the PR 10 reproduction. The stall sweeper is **not** scheduled there, on purpose. Install the promoted `04tak000000utQ1AAI` only into a fresh org.
-- The live-check rows from PR 8 (Account "Live check customer", Order `LIVE-0001`, Shipment `LIVE-TRK-1`, message `LIVE-0001-shipped`) are still in `aei-dev`.
+- **C is done.** Definition of done met: CI green, README complete, ADRs 0001–0009, Code Analyzer 0 High and 0 Moderate, no `TODO`s, `docs/case-study.md` written, release `1.0.0-1` promoted, repo public. Only `main` and `badges` remain.
+- A later change to C is a normal feature PR plus a version bump (`versionNumber`, a `## X.Y.Z` changelog section, then the owner approves the tag and promotes).
+- Back-port to E's scaffold template (not done): `SKIP_PERMSETS=1` in `org-setup.sh` set by `ci.yml`, so template repos test like the package build org; and a note to run `sf package create` (keeping only the `0Ho` alias) before the first tag.
+- `aei-dev` (expires around 2026-12-13) has A `1.1.0-1` and source, never the beta, and matches `main`; all five permission sets are assigned to the default user. The PR 8 live-check rows are still there. The stall sweeper is not scheduled there, on purpose.
 - To reproduce the package build org locally, remove the default user's package permission set assignments (anonymous Apex delete of `PermissionSetAssignment`; there is no `sf org unassign permset`), run `npm run org:test`, then re-assign them.
-- Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
