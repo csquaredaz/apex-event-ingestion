@@ -29,7 +29,7 @@ Last updated: 2026-11-16 (PR 5 in review)
 - **PR 5 `feat/event-intake` (in review, 2026-11-16).** API approved 2026-11-16 with all five design calls: `Inbound_Message_Event__e` (high volume, Publish After Commit), `InboundMessageEventTrigger` → `TriggerDispatcher` → `InboundMessageEventsDomain` (`DI_Binding.Inbound_Message_Events_Domain`), `IngestionSettings.getIntakeBatchSize()`/`getIntakePayloadBudget()` (`Intake_Batch_Size__c` 200, `Intake_Payload_Budget__c` 3,000,000), `Event_Ingestion_Publisher`. ADR 0007.
   - Chad's calls: (1) no Automated Process assignment script, because probe 2 showed that user needs no permission set; (2) retry every failure through the platform's 9 retries, CRITICAL alert on the last, then the trigger suspends; (3) count + payload budget per run with a resume checkpoint; (4) rejections logged by key only; (5) Publish After Commit.
   - Changed during the build: the event is `Inbound_Message_Event__e`, because the platform rejects `Inbound_Message__e` next to `Inbound_Message__c` ("That object name is already in use").
-  - Local run in `aei-dev`: 139 tests, all passing; `InboundMessageEventsDomain` and the trigger 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (checkpoint removed) made the integration test fail (2 stored, not 3).
+  - Local run in `aei-dev`: 138 tests from C's 22 test classes, all passing; `InboundMessageEventsDomain` and the trigger 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (checkpoint removed) made the integration test fail (2 stored, not 3).
   - Not probed: the suspension after the 9th retry (platform documentation).
 
 ## Approved design
