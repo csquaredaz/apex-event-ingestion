@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-16 (PR 8 in review)
+Last updated: 2026-11-16 (after PR 8)
 
 ## Done
 
@@ -43,7 +43,7 @@ Last updated: 2026-11-16 (PR 8 in review)
   - Changed after the API gate: the wake event has no custom fields (the planned `Requested_By__c` was dropped; a field-less high-volume event deploys).
   - Local run in `aei-dev`: 208 tests from C's 32 test classes, all passing, every class 100%; Code Analyzer 0 High, 0 Moderate. A mutation check (the wake call removed) failed 4 tests. Review: Approved with comments, 2 Low fixed (Id order in the alert, a null time).
 
-- **PR 8 `feat/example-and-docs` (in review, 2026-11-16).** Plan approved with all five calls: (1) `example/` is a second packageDirectory with no `package` key, its classes inside CI's coverage gate (summary column relabelled "package + example"); the package build is unaffected (`@salesforce/packaging` converts only `packageObject.path`; profiles are the one cross-directory pull, so the example ships none); (2) a second handler `ShipmentRecordedHandler` upserting `Shipment__c` by the unique `Tracking_Number__c`; (3) custom `Order.Fulfilment_Status__c` and `Status_Changed_At__c`, not `Order.Status` (activation needs order products); upsert keyed on `OrderReferenceNumber` only for orders found; (4) no permission set for the Automated Process user, after a live check in `aei-dev` showed it updating `Order` and creating `Shipment__c` in user mode; (5) no new ADR: ADR 0001 amended, ADR 0005 wording; README "Built with Claude Code" uses PR 6's confused deputy.
+- **PR 8 `feat/example-and-docs` merged 2026-11-16 as `c4fa3e4` (PR #8).** The ready run, 43942978305, used one CI org: 238 tests from C's 37 test classes (package + example), coverage 100%. The `main` run, 43947965541, reused that result (scratch-org job skipped) and published the badge. Plan approved with all five calls: (1) `example/` is a second packageDirectory with no `package` key, its classes inside CI's coverage gate (summary column relabelled "package + example"); the package build is unaffected (`@salesforce/packaging` converts only `packageObject.path`; profiles are the one cross-directory pull, so the example ships none); (2) a second handler `ShipmentRecordedHandler` upserting `Shipment__c` by the unique `Tracking_Number__c`; (3) custom `Order.Fulfilment_Status__c` and `Status_Changed_At__c`, not `Order.Status` (activation needs order products); upsert keyed on `OrderReferenceNumber` only for orders found; (4) no permission set for the Automated Process user, after a live check in `aei-dev` showed it updating `Order` and creating `Shipment__c` in user mode; (5) no new ADR: ADR 0001 amended, ADR 0005 wording; README "Built with Claude Code" uses PR 6's confused deputy.
   - Built: `OrderStatusChange`, `IOrdersSelector`/`OrdersSelector` (`DI_Binding.Orders_Selector`), `OrderMessageHandler` (Template Method base), `OrderStatusChangedHandler`, `ShipmentRecordedHandler`, two `Message_Route__mdt` rows (Order 10 and 20), `Shipment__c`, `Event_Ingestion_Example`; tests `OrderStatusChangeTest`, `OrderStatusChangedHandlerTest`, `ShipmentRecordedHandlerTest`, `OrdersSelectorTest`, `IngestionEndToEndTest` (no mocks), plus the `OrderTestFactory` fixture. `scripts/org-setup.sh` assigns permission sets from every package directory.
   - Local CI replay in `aei-dev`: 238 tests from 37 classes, all passing, 100% of the 35 own classes; Code Analyzer 0 High, 0 Moderate. Mutation check (the stale guard removed) failed 2 tests, one unit and one end-to-end. Found by the tests: `Event_Ingestion_Example` needs FLS on `Order.OrderReferenceNumber`.
   - The live check's rows (Account "Live check customer", Order `LIVE-0001`, Shipment `LIVE-TRK-1`, message `LIVE-0001-shipped`) are still in `aei-dev`; auto mode denied `sf data delete record`.
@@ -100,8 +100,8 @@ Last updated: 2026-11-16 (PR 8 in review)
 
 ## Notes for the next session
 
-- **Now: PR 8 `feat/example-and-docs`, in review.** After it merges: PR 9 `docs/release-1.0.0` (the handoff update as its first commit, pushed with no PR), then the owner approves the `v1.0.0` tag, promotes, and PR 9 adds the `04t` alias, README install steps and the install-as-04t smoke test (run only `force-app` `*Test` classes against the installed package; `example/` deploys as source on top).
-- `aei-dev` (expires around 2026-12-13) has `main` at `dfbdb39` plus this branch's `example/`, and `Event_Ingestion_Example` is assigned to the default user. The stall sweeper is **not** scheduled there, on purpose.
-- Dev Hub on 2026-11-16, after PR 7: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs.
+- **Next: PR 9 `docs/release-1.0.0`.** This branch was cut from `main` at `c4fa3e4`, and its first commit is this handoff (pushed, no PR). Then the owner approves the `v1.0.0` tag, promotes, and PR 9 adds the `04t` alias, README install steps and the install-as-04t smoke test (run only `force-app` `*Test` classes against the installed package; `example/` deploys as source on top).
+- `aei-dev` (expires around 2026-12-13) is in sync with `main` at `c4fa3e4` (package and `example/`), and `Event_Ingestion_Example` is assigned to the default user. The stall sweeper is **not** scheduled there, on purpose.
+- Dev Hub on 2026-11-16, after PR 8: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 4/6 daily scratch orgs, 6/6 package version creates.
 - To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
