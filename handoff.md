@@ -1,6 +1,6 @@
 # Handoff: apex-event-ingestion
 
-Last updated: 2026-11-15 (PR 4 in review)
+Last updated: 2026-11-16 (after PR 4)
 
 ## Done
 
@@ -21,7 +21,7 @@ Last updated: 2026-11-15 (PR 4 in review)
 - **PR 3 `feat/dispatch` merged 2026-11-15 as `ac9ed90` (PR #3).** The ready run, 43765815593, used one CI org: 79 tests from C's 13 classes, package coverage 100%. The `main` run, 43767608949, reused that result (scratch-org job skipped) and published the badge. API approved 2026-11-15: `IMessageHandler`, `InboundMessage` (with `getAttempt()` and `isOlderThan`), `HandlerResult` (`SUCCESS`, `RETRYABLE`, `FATAL`), `IMessageDispatcher.dispatch(Set<Id>)` returning `Map<Id, HandlerResult>`. Internal: `GuardedMessageHandler` (Decorator), `CompositeMessageHandler`, `IMessageRouter`/`MessageRouter`, `IMessageRoutesSelector`/`MessageRoutesSelector`, `Message_Route__mdt`, three `DI_Binding` rows, `IInboundMessagesSelector.selectWithPayloadByIds`. ADRs 0004 and 0005.
   - Chad's design calls: results keyed by message Id (a missing one is `RETRYABLE`); a savepoint per handler call (a throw rolls back and retries all of that call); no route → `FATAL`, a broken route → `RETRYABLE`; dispatch writes no status (PR 4 does); handlers make no synchronous callouts.
   - Local run in `aei-dev`: 79 tests from C's 13 classes, 100% on every class; Code Analyzer 0 High, 0 Moderate. A mutation check (savepoint release removed) made the callout test fail, so the test can fail.
-- **PR 4 `feat/finalizer-recovery` in review (2026-11-15).** API approved 2026-11-15 with all four design calls: `MessageProcessing.enqueue()`, `IInboundMessagesSelector.selectClaimable`, `IMessageLifecycle`/`MessageLifecycle`, `MessageProcessorJob`, `MessageProcessorFinalizer`, `RetrySchedule`, `IngestionSettings`, `Ingestion_Setting__mdt` (`Default`: batch 200, 5 attempts, 1-minute base, 60-minute cap). ADR 0006.
+- **PR 4 `feat/finalizer-recovery` merged 2026-11-16 as `ffae240` (PR #4).** The ready run, 43772376297, used one CI org: 124 tests from C's 20 test classes, package coverage 100%. The `main` run, 43911649870, reused that result (scratch-org job skipped) and published the badge. API approved 2026-11-15 with all four design calls: `MessageProcessing.enqueue()`, `IInboundMessagesSelector.selectClaimable`, `IMessageLifecycle`/`MessageLifecycle`, `MessageProcessorJob`, `MessageProcessorFinalizer`, `RetrySchedule`, `IngestionSettings`, `Ingestion_Setting__mdt` (`Default`: batch 200, 5 attempts, 1-minute base, 60-minute cap). ADR 0006.
   - Chad's calls: (1) the row lock is the claim, so `Processing` and `Locked_Until__c` were removed (pre-release); (2) one duplicate signature, and a claim timeout ends a job quietly; (3) the Finalizer always decides the next run; (4) a failing recovery is a documented limit, alerted.
   - Added during the build, outside the approved signatures: `IProcessorQueue`/`ProcessorQueue` (`DI_Binding.Processor_Queue`), because a test context refuses any job enqueued from a successful job's Finalizer; and `MessageProcessorFinalizer.claimed(Set<Id>, Integer)`/`completed(Datetime)`, which the job calls.
   - Local run in `aei-dev`: 124 tests from C's 20 test classes, 100% of C's 585 lines (21 classes); Code Analyzer 0 High, 0 Moderate. A mutation check (truncation removed) made `MessageLifecycleTest` fail.
@@ -80,8 +80,8 @@ Last updated: 2026-11-15 (PR 4 in review)
 
 ## Notes for the next session
 
-- **Now: PR 4 `feat/finalizer-recovery`** (draft PR). Next after its merge: PR 5 `feat/event-intake`; put the post-merge handoff update as its first commit (pushed, no PR). Run probe 2 (Automated Process user) first.
-- Dev Hub on 2026-11-15, after PR 3: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 5/6 daily scratch orgs, 6/6 package creates. `aei-dev` is in sync with `main` at `ac9ed90`.
-- `aei-dev` (expires around 2026-12-13) is in sync with `main`: the store, its permission sets, the bindings and the tests are deployed, and Processor is assigned to the default user.
+- **Next: PR 5 `feat/event-intake`.** This branch was cut from `main` at `ffae240`, and its first commit is this handoff. Run probe 2 first: the Automated Process user, with `Event_Ingestion_Processor` assigned, both stores and processes messages. That settles the ownership decision. Then show the PR 5 signatures and design calls before writing tests.
+- Dev Hub on 2026-11-16, after PR 4: 2 of 3 active slots free (`aei-dev` holds one; the CI org is deleted), 6/6 daily scratch orgs, 6/6 package creates.
+- `aei-dev` (expires around 2026-12-13) is in sync with `main` at `ffae240`: the store, dispatch and processing are deployed, `Locked_Until__c` is deleted, and Processor is assigned to the default user.
 - To check CI's gate before spending an org, a local replay of the test step (the same `--class-names` and own-class filter) worked well. `npm run org:test` covers the test run itself.
 - Run tests in the dev org with `npm run org:test`, which uses the same `--class-names` scope as CI.
