@@ -185,6 +185,10 @@ jobs:
           bash scripts/org-setup.sh ci-org 2>&1 | bash scripts/redact-org-details.sh
         env:
           SF_SCRATCH_DURATION: "1"
+          # Test as the package build org does: the running admin has none of this repo's
+          # permission sets, so tests must set up their own users' access (release v1.0.0's first
+          # build failed on 17 tests that leaned on the admin's).
+          SKIP_PERMSETS: "1"
           # The Dev Hub authenticates through an External Client App, which scratch-org signup
           # can't replicate. These official CLI variables (CLI >= 2.147.7) make signup use the
           # built-in Salesforce CLI connected app instead. See forcedotcom/cli#3515.
